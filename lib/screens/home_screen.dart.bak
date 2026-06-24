@@ -1,0 +1,479 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:intl/intl.dart';
+
+import '../core/theme/app_ui.dart';
+import '../presentation/widgets/secure_network_image.dart';
+import '../services/msce_student_service.dart';
+import '../services/session_service.dart';
+import '../services/exam_centre_student_cache.dart';
+import 'center_login_screen.dart';
+
+enum _Filter { all, present, absent }
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final _students = MsceStudentService();
+  final _searchCtrl = TextEditingController();
+  Timer? _debounce;
+
+  String? _centerName;
+  int _rosterCount = 0;
+  int _unmatchedRoster = 0;
+  List<MsceStudent> _all = [];
+  _Filter _filter = _Filter.all;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(_onSearch);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onSearch() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), _load);
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    final center = await SessionService.getCenter();
+    if (center == null) {
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const CenterLoginScreen()),
+      );
+      return;
+    }
+
+    final defaultInstitute = center['msceInstituteId']?.trim().isNotEmpty == true
+        ? center['msceInstituteId']!.trim()
+        : center['code']?.trim() ?? '';
+
+    try {
+      final result = await _students.loadStudentsForCenter(
+        centerId: center['id']!,
+        centerCode: center['code'],
+        instituteId: defaultInstitute.isNotEmpty ? defaultInstitute : null,
+        search: _searchCtrl.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _centerName = center['name'];
+        _rosterCount = result.rosterCount;
+        _unmatchedRoster = result.unmatchedRoster.length;
+        _all = result.students;
+        _loading = false;
+        if (!result.hasRoster) {
+          _error =
+              'No students for this centre. Set students.exam_centre_code = "${center['code']}" in SQL, or add exam_center_student_roster rows.';
+        } else if (result.students.isEmpty) {
+          _error = 'Allotted students could not be matched in MSCE database. Check full name + institute id.';
+        } else if (result.unmatchedRoster.isNotEmpty) {
+          _error = null;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  List<MsceStudent> get _visible {
+    switch (_filter) {
+      case _Filter.present:
+        return _all.where((s) => s.entryMarked).toList();
+      case _Filter.absent:
+        return _all.where((s) => !s.entryMarked).toList();
+      case _Filter.all:
+        return _all;
+    }
+  }
+
+  int get _present => _all.where((s) => s.entryMarked).length;
+  int get _absent => _all.length - _present;
+
+  void _snack(String msg, {required bool success}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: success ? AppTheme.accentGreen : AppTheme.accentRed,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _logout() async {
+    ExamCentreStudentCache.clear();
+    await SessionService.clear();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const CenterLoginScreen()),
+      (_) => false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.backgroundGrey,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _buildHeader(),
+            _buildSearch(),
+            _buildFilters(),
+            Expanded(child: _buildBody()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      color: AppTheme.primaryBlueDark,
+      padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 12.h),
+      child: Row(
+        children: [
+          Icon(Icons.school_rounded, color: Colors.white.withValues(alpha: 0.95), size: 22.sp),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Students',
+                  style: TextStyle(color: Colors.white, fontSize: 17.sp, fontWeight: FontWeight.w800),
+                ),
+                if (_centerName != null)
+                  Text(
+                    _centerName!,
+                    style: TextStyle(color: Colors.white70, fontSize: 11.sp),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+          _chip('Total', _all.length),
+          SizedBox(width: 6.w),
+          _chip('In', _present),
+          SizedBox(width: 6.w),
+          _chip('Out', _absent),
+          SizedBox(width: 8.w),
+          IconButton(
+            onPressed: _logout,
+            icon: const Icon(Icons.logout, color: Colors.white),
+            tooltip: 'Sign out',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, int n) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(14.r),
+      ),
+      child: Text(
+        '$label $n',
+        style: TextStyle(color: Colors.white, fontSize: 10.sp, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Widget _buildSearch() {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 0),
+      child: TextField(
+        controller: _searchCtrl,
+        decoration: InputDecoration(
+          hintText: 'Search by name, surname, SR no…',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _searchCtrl.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchCtrl.clear();
+                    _load();
+                  },
+                )
+              : null,
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.r)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilters() {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 0),
+      child: Wrap(
+        spacing: 8,
+        children: [
+          _filterChip(_Filter.all, 'All (${_all.length})'),
+          _filterChip(_Filter.present, 'Present ($_present)'),
+          _filterChip(_Filter.absent, 'Absent ($_absent)'),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(_Filter f, String label) {
+    final selected = _filter == f;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() => _filter = f),
+      selectedColor: AppTheme.primaryBlue,
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : AppTheme.primaryBlue,
+        fontWeight: FontWeight.w700,
+        fontSize: 12.sp,
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: AppTheme.primaryBlue));
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(_error!, textAlign: TextAlign.center),
+        ),
+      );
+    }
+    final visible = _visible;
+    if (visible.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            _rosterCount > 0
+                ? 'No matched students for this centre ($_rosterCount allotted).'
+                : 'No students found for this centre.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+        padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 88.h),
+        itemCount: visible.length + (_unmatchedRoster > 0 ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (_unmatchedRoster > 0 && i == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Material(
+                color: AppTheme.accentRed.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    '$_unmatchedRoster allotted name(s) could not be matched in MSCE — check spelling / institute id.',
+                    style: TextStyle(color: AppTheme.accentRed, fontSize: 12.sp),
+                  ),
+                ),
+              ),
+            );
+          }
+          final idx = i - (_unmatchedRoster > 0 ? 1 : 0);
+          return _studentCard(visible[idx]);
+        },
+      ),
+    );
+  }
+
+  Widget _studentCard(MsceStudent s) {
+    final hasPhoto = s.photoUrl.isNotEmpty;
+    final entryTime = s.entryMarkedAt != null
+        ? DateFormat('HH:mm').format(s.entryMarkedAt!.toLocal())
+        : '—';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GovElevatedCard(
+        padding: EdgeInsets.fromLTRB(10.w, 10.h, 6.w, 10.h),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 72,
+                height: 72,
+                child: hasPhoto
+                    ? SecureNetworkImage(
+                        cacheKey: 'student_face_${s.id}',
+                        imageUrl: s.photoUrl,
+                        version: s.photoVersion ?? '0',
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                        placeholder: ColoredBox(
+                          color: AppTheme.primaryBlue.withValues(alpha: 0.1),
+                          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                        ),
+                        errorWidget: _photoPlaceholder(),
+                      )
+                    : _photoPlaceholder(),
+              ),
+            ),
+            SizedBox(width: 10.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.displayName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15.sp,
+                      color: AppTheme.textDark,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (s.lastName.isNotEmpty)
+                    Text(
+                      s.lastName,
+                      style: TextStyle(fontSize: 12.sp, color: AppTheme.textGray),
+                    ),
+                  SizedBox(height: 4.h),
+                  Text(
+                    'SR NO: ${_formatSr(s.srNo)}',
+                    style: TextStyle(
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textGray,
+                    ),
+                  ),
+                  Text(
+                    'Exam roll: ${s.rollLabel}',
+                    style: TextStyle(fontSize: 11.sp, color: AppTheme.textLightGray),
+                  ),
+                  SizedBox(height: 8.h),
+                  _entryThumb(s, entryTime),
+                ],
+              ),
+            ),
+            Column(
+              children: [
+                Icon(
+                  s.hasFaceEmbedding ? Icons.check_circle : Icons.face_retouching_natural,
+                  color: s.hasFaceEmbedding ? AppTheme.textLightGray : AppTheme.primaryGreen,
+                  size: 22,
+                ),
+                if (s.entryMarked)
+                  Icon(Icons.login_rounded, color: AppTheme.primaryGreen, size: 22),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _entryThumb(MsceStudent s, String time) {
+    final hasEntry = s.entryPhotoUrl != null && s.entryPhotoUrl!.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Entry',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 10.sp,
+            fontWeight: FontWeight.w800,
+            color: AppTheme.primaryGreen,
+          ),
+        ),
+        SizedBox(height: 4.h),
+        Container(
+          height: 48,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: s.entryMarked ? AppTheme.primaryGreen : AppTheme.dividerColor,
+              width: 2,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: hasEntry
+              ? SecureNetworkImage(
+                  cacheKey: 'entry_${s.id}',
+                  imageUrl: s.entryPhotoUrl,
+                  width: double.infinity,
+                  height: 48,
+                  fit: BoxFit.cover,
+                )
+              : ColoredBox(
+                  color: AppTheme.backgroundGrey,
+                  child: Icon(
+                    s.entryMarked ? Icons.check_circle : Icons.remove,
+                    color: s.entryMarked
+                        ? AppTheme.primaryGreen
+                        : AppTheme.textLightGray.withValues(alpha: 0.65),
+                  ),
+                ),
+        ),
+        SizedBox(height: 2.h),
+        Text(
+          time,
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 9.sp, color: AppTheme.textGray),
+        ),
+      ],
+    );
+  }
+
+  Widget _photoPlaceholder() {
+    return ColoredBox(
+      color: AppTheme.primaryBlue.withValues(alpha: 0.1),
+      child: const Icon(Icons.person, color: AppTheme.primaryBlue, size: 32),
+    );
+  }
+
+  String _formatSr(String sr) {
+    final n = int.tryParse(sr.trim());
+    if (n != null) return n.toString().padLeft(3, '0');
+    return sr.isEmpty ? '—' : sr;
+  }
+}

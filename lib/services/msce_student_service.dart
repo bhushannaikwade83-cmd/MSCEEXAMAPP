@@ -1,0 +1,529 @@
+import '../core/exam_student_name_utils.dart';
+import '../core/supabase_client.dart';
+import '../core/student_face_embedding_utils.dart';
+import 'exam_centre_student_cache.dart';
+import 'storage_service.dart';
+import 'student_face_match_index.dart';
+
+class MsceStudent {
+  MsceStudent({
+    required this.id,
+    required this.name,
+    required this.lastName,
+    required this.srNo,
+    required this.photoUrl,
+    this.photoVersion,
+    required this.hasFaceEmbedding,
+    this.instituteId,
+    this.userId,
+    this.firstName,
+    this.middleName,
+    this.year,
+    this.subject,
+    this.examRollNumber,
+    this.entryMarked = false,
+    this.entryPhotoUrl,
+    this.entryMarkedAt,
+    this.faceMatchScore,
+    this.rosterMatched = true,
+    this.subjects = const [],  // ✅ NEW: All exam_students rows (all subjects)
+  });
+
+  final String id;
+  final String name;
+  final String lastName;
+  final String srNo;
+  final String photoUrl;
+  final String? photoVersion;
+  final bool hasFaceEmbedding;
+  final String? instituteId;
+  final String? userId;
+  final String? firstName;
+  final String? middleName;
+  final String? year;
+  final String? subject;
+  final String? examRollNumber;
+  final bool entryMarked;
+  final String? entryPhotoUrl;
+  final DateTime? entryMarkedAt;
+  final double? faceMatchScore;
+  final bool rosterMatched;
+  final List<Map<String, dynamic>> subjects;  // ✅ NEW: All subject rows for this student
+
+  String get displayName => name.trim().isNotEmpty ? name.trim() : 'Unknown';
+
+  String get rollLabel => (examRollNumber?.trim().isNotEmpty == true)
+      ? examRollNumber!.trim()
+      : '—';
+}
+
+class ExamCenterRosterEntry {
+  ExamCenterRosterEntry({
+    required this.id,
+    required this.instituteId,
+    required this.fullName,
+    this.msceStudentId,
+    this.examRollNumber,
+  });
+
+  final String id;
+  final String instituteId;
+  final String fullName;
+  final String? msceStudentId;
+  final String? examRollNumber;
+}
+
+class MsceStudentLoadResult {
+  const MsceStudentLoadResult({
+    required this.students,
+    this.unmatchedRoster = const [],
+    this.rosterCount = 0,
+  });
+
+  final List<MsceStudent> students;
+  final List<ExamCenterRosterEntry> unmatchedRoster;
+  final int rosterCount;
+
+  bool get hasRoster => rosterCount > 0;
+  Set<String> get allottedStudentIds => students.map((s) => s.id).toSet();
+}
+
+class MsceStudentService {
+  static const _detailCols =
+      'id,institute_id,name,first_name,middle_name,last_name,sr_no,user_id,year,subject,subjects,face_photo_url,photo_version,photo_thumbnail,face_photo_changed_once,face_embedding';
+
+  /// Load allotted students with MSCE photo + face_embedding (cached for entry compare).
+  ///
+  /// Priority: [centerCode] → `students.exam_centre_code`, then roster table fallback.
+  Future<MsceStudentLoadResult> loadStudentsForCenter({
+    required String centerId,
+    String? centerCode,
+    String? instituteId,
+    String search = '',
+  }) async {
+    if (!isSupabaseConfigured) {
+      return const MsceStudentLoadResult(students: []);
+    }
+
+    final code = centerCode?.trim() ?? '';
+    if (code.isNotEmpty) {
+      final byCode = await _loadStudentsByCentreCode(
+        centerCode: code,
+        instituteId: instituteId?.trim(),
+      );
+      if (byCode.isNotEmpty) {
+        return _finalizeStudentLoad(
+          centerId: centerId,
+          matchedRows: byCode,
+          rosterCount: byCode.length,
+          search: search,
+        );
+      }
+    }
+
+    final roster = await _loadRoster(centerId);
+    if (roster.isEmpty) {
+      ExamCentreStudentCache.clear();
+      return const MsceStudentLoadResult(students: [], rosterCount: 0);
+    }
+
+    final msceByKey = await _fetchMsceStudentsForRoster(roster);
+
+    final matchedRows = <Map<String, dynamic>>[];
+    final unmatched = <ExamCenterRosterEntry>[];
+    final linkUpdates = <Map<String, dynamic>>[];
+    final examRollByStudentId = <String, String?>{};
+
+    for (final entry in roster) {
+      final key = examStudentRosterKey(entry.instituteId, entry.fullName);
+      Map<String, dynamic>? row = msceByKey[key];
+
+      if (row == null && entry.msceStudentId != null && entry.msceStudentId!.isNotEmpty) {
+        row = msceByKey['id:${entry.msceStudentId}'];
+      }
+
+      if (row == null) {
+        unmatched.add(entry);
+        continue;
+      }
+
+      final studentId = row['id']?.toString() ?? '';
+      if (studentId.isEmpty) {
+        unmatched.add(entry);
+        continue;
+      }
+
+      if (entry.msceStudentId != studentId) {
+        linkUpdates.add({
+          'id': entry.id,
+          'exam_msce_student_id': studentId,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        });
+      }
+
+      matchedRows.add(row);
+      examRollByStudentId[studentId] = entry.examRollNumber;
+    }
+
+    if (linkUpdates.isNotEmpty) {
+      await _persistRosterLinks(linkUpdates);
+    }
+
+    return _finalizeStudentLoad(
+      centerId: centerId,
+      matchedRows: matchedRows,
+      rosterCount: roster.length,
+      search: search,
+      unmatchedRoster: unmatched,
+      examRollByStudentId: examRollByStudentId,
+    );
+  }
+
+  Future<MsceStudentLoadResult> _finalizeStudentLoad({
+    required String centerId,
+    required List<Map<String, dynamic>> matchedRows,
+    required int rosterCount,
+    required String search,
+    List<ExamCenterRosterEntry> unmatchedRoster = const [],
+    Map<String, String?> examRollByStudentId = const {},
+  }) async {
+    final marks = await _entryMarksByStudent(centerId);
+
+    final matched = matchedRows
+        .map(
+          (row) => _mapRow(
+            row,
+            marks: marks,
+            examRollNumber: examRollByStudentId[row['id']?.toString() ?? ''],
+          ),
+        )
+        .toList();
+
+    await _signPhotoUrls(matchedRows);
+
+    ExamCentreStudentCache.setForCenter(centerId: centerId, studentRows: matchedRows);
+    await StudentFaceMatchIndex.warmCacheFromRows(matchedRows);
+
+    matched.sort((a, b) {
+      final lc = a.lastName.toLowerCase().compareTo(b.lastName.toLowerCase());
+      if (lc != 0) return lc;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+    final signedById = {for (final r in matchedRows) r['id']?.toString() ?? '': r};
+    for (var i = 0; i < matched.length; i++) {
+      final id = matched[i].id;
+      final signedUrl = signedById[id]?['face_photo_url']?.toString() ?? matched[i].photoUrl;
+      if (signedUrl != matched[i].photoUrl) {
+        matched[i] = MsceStudent(
+          id: matched[i].id,
+          name: matched[i].name,
+          lastName: matched[i].lastName,
+          srNo: matched[i].srNo,
+          photoUrl: signedUrl,
+          photoVersion: matched[i].photoVersion,
+          hasFaceEmbedding: matched[i].hasFaceEmbedding,
+          instituteId: matched[i].instituteId,
+          userId: matched[i].userId,
+          firstName: matched[i].firstName,
+          middleName: matched[i].middleName,
+          year: matched[i].year,
+          subject: matched[i].subject,
+          examRollNumber: matched[i].examRollNumber,
+          entryMarked: matched[i].entryMarked,
+          entryPhotoUrl: matched[i].entryPhotoUrl,
+          entryMarkedAt: matched[i].entryMarkedAt,
+          faceMatchScore: matched[i].faceMatchScore,
+        );
+      }
+    }
+
+    final token = search.trim().replaceAll(',', ' ').replaceAll(RegExp(r'[%_]'), '').toLowerCase();
+    final filtered = token.isEmpty
+        ? matched
+        : matched.where((s) {
+            final hay =
+                '${s.name} ${s.lastName} ${s.srNo} ${s.userId ?? ''} ${s.examRollNumber ?? ''}'
+                    .toLowerCase();
+            return hay.contains(token);
+          }).toList();
+
+    return MsceStudentLoadResult(
+      students: filtered,
+      unmatchedRoster: unmatchedRoster,
+      rosterCount: rosterCount,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _loadStudentsByCentreCode({
+    required String centerCode,
+    String? instituteId,
+  }) async {
+    var query = supabase
+        .from('students')
+        .select(_detailCols)
+        .eq('exam_centre_code', centerCode);
+
+    final inst = instituteId?.trim() ?? '';
+    if (inst.isNotEmpty) {
+      query = query.eq('institute_id', inst);
+    }
+
+    final rows = await query.order('name');
+    return [
+      for (final raw in rows as List)
+        Map<String, dynamic>.from(raw as Map),
+    ];
+  }
+
+  Future<void> _signPhotoUrls(List<Map<String, dynamic>> rows) async {
+    await Future.wait(
+      rows.map((row) async {
+        final raw = row['face_photo_url']?.toString() ?? '';
+        if (raw.isEmpty) return;
+        try {
+          row['face_photo_url'] = await StorageService.ensureSignedUrl(raw);
+        } catch (_) {
+          row['face_photo_url'] = raw;
+        }
+      }),
+    );
+  }
+
+  Future<List<ExamCenterRosterEntry>> _loadRoster(String centerId) async {
+    final rows = await supabase
+        .from('exam_centre_student_roster')
+        .select('id, exam_msce_institute_id, exam_student_full_name, exam_msce_student_id, exam_roll_number')
+        .eq('centre_id', centerId)
+        .order('exam_student_full_name');
+
+    return [
+      for (final raw in rows as List)
+        ExamCenterRosterEntry(
+          id: (raw as Map)['id']?.toString() ?? '',
+          instituteId: raw['exam_msce_institute_id']?.toString() ?? '',
+          fullName: raw['exam_student_full_name']?.toString() ?? '',
+          msceStudentId: raw['exam_msce_student_id']?.toString(),
+          examRollNumber: raw['exam_roll_number']?.toString(),
+        ),
+    ];
+  }
+
+  Future<Map<String, Map<String, dynamic>>> _fetchMsceStudentsForRoster(
+    List<ExamCenterRosterEntry> roster,
+  ) async {
+    final linkedIds = roster
+        .map((e) => e.msceStudentId)
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .toSet();
+
+    if (linkedIds.isNotEmpty) {
+      return _fetchMsceStudentsByIds(linkedIds);
+    }
+
+    final instituteIds = roster.map((r) => r.instituteId).where((s) => s.isNotEmpty).toSet().toList();
+    return _fetchMsceStudentsByInstitute(instituteIds);
+  }
+
+  Future<Map<String, Map<String, dynamic>>> _fetchMsceStudentsByIds(Set<String> ids) async {
+    if (ids.isEmpty) return {};
+
+    final out = <String, Map<String, dynamic>>{};
+    final idList = ids.toList();
+    const chunk = 80;
+
+    for (var i = 0; i < idList.length; i += chunk) {
+      final slice = idList.sublist(i, i + chunk > idList.length ? idList.length : i + chunk);
+      final rows = await supabase.from('students').select(_detailCols).inFilter('id', slice);
+
+      for (final raw in rows as List) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final id = row['id']?.toString() ?? '';
+        final instituteId = row['institute_id']?.toString() ?? '';
+        if (id.isEmpty) continue;
+
+        final key = instituteId.isNotEmpty
+            ? examStudentRosterKey(instituteId, msceStudentFullName(row))
+            : id;
+        out.putIfAbsent(key, () => row);
+        out['id:$id'] = row;
+      }
+    }
+    return out;
+  }
+
+  Future<Map<String, Map<String, dynamic>>> _fetchMsceStudentsByInstitute(
+    List<String> instituteIds,
+  ) async {
+    if (instituteIds.isEmpty) return {};
+
+    final rows = await supabase
+        .from('students')
+        .select(_detailCols)
+        .inFilter('institute_id', instituteIds);
+
+    final out = <String, Map<String, dynamic>>{};
+    for (final raw in rows as List) {
+      final row = Map<String, dynamic>.from(raw as Map);
+      final id = row['id']?.toString() ?? '';
+      final instituteId = row['institute_id']?.toString() ?? '';
+      if (id.isEmpty || instituteId.isEmpty) continue;
+
+      final key = examStudentRosterKey(instituteId, msceStudentFullName(row));
+      out.putIfAbsent(key, () => row);
+      out['id:$id'] = row;
+    }
+    return out;
+  }
+
+  Future<void> _persistRosterLinks(List<Map<String, dynamic>> updates) async {
+    try {
+      for (final patch in updates) {
+        final id = patch['id']?.toString();
+        if (id == null || id.isEmpty) continue;
+        await supabase.from('exam_centre_student_roster').update({
+          'exam_msce_student_id': patch['exam_msce_student_id'],
+          'updated_at': patch['updated_at'],
+        }).eq('id', id);
+      }
+    } catch (_) {}
+  }
+
+  Future<Map<String, Map<String, dynamic>>> _entryMarksByStudent(String centerId) async {
+    final rows = await supabase
+        .from('exam_attendance_marks')
+        .select('exam_msce_student_id, marked_at, exam_entry_photo_url, present_photo_path, exam_face_match_score')
+        .eq('centre_id', centerId)
+        .not('exam_msce_student_id', 'is', null);
+
+    final out = <String, Map<String, dynamic>>{};
+    for (final raw in rows as List) {
+      final m = Map<String, dynamic>.from(raw as Map);
+      final sid = m['exam_msce_student_id']?.toString() ?? '';
+      if (sid.isNotEmpty) out[sid] = m;
+    }
+    return out;
+  }
+
+  MsceStudent _mapRow(
+    Map<String, dynamic> row, {
+    required Map<String, Map<String, dynamic>> marks,
+    String? examRollNumber,
+  }) {
+    final id = row['id']?.toString() ?? '';
+    final mark = marks[id];
+    final entryUrl = mark?['exam_entry_photo_url']?.toString() ??
+        mark?['present_photo_path']?.toString();
+    DateTime? markedAt;
+    final markedRaw = mark?['marked_at']?.toString();
+    if (markedRaw != null && markedRaw.isNotEmpty) {
+      markedAt = DateTime.tryParse(markedRaw);
+    }
+
+    final subjects = row['subjects'];
+    String? subject = row['subject']?.toString();
+    if ((subject == null || subject.isEmpty) && subjects is List && subjects.isNotEmpty) {
+      subject = subjects.first?.toString();
+    }
+
+    return MsceStudent(
+      id: id,
+      name: row['name']?.toString() ?? '',
+      lastName: row['last_name']?.toString() ?? '',
+      srNo: row['sr_no']?.toString() ?? '',
+      photoUrl: row['face_photo_url']?.toString() ?? '',
+      photoVersion: row['photo_version']?.toString(),
+      hasFaceEmbedding: studentHasNonEmptyFaceEmbedding(row['face_embedding']),
+      instituteId: row['institute_id']?.toString(),
+      userId: row['user_id']?.toString(),
+      firstName: row['first_name']?.toString(),
+      middleName: row['middle_name']?.toString(),
+      year: row['year']?.toString(),
+      subject: subject,
+      examRollNumber: examRollNumber,
+      entryMarked: mark != null,
+      entryPhotoUrl: entryUrl,
+      entryMarkedAt: markedAt,
+      faceMatchScore: (mark?['exam_face_match_score'] as num?)?.toDouble(),
+    );
+  }
+
+
+  /// Load students directly from exam_students table
+  /// Groups all subjects per student, stores all exam_students rows
+  Future<List<MsceStudent>> loadFromExamStudentsTable({
+    required String centerId,
+    String? centerCode,
+    String search = '',
+  }) async {
+    if (!isSupabaseConfigured) return [];
+    try {
+      print('🔍 DEBUG: Querying exam_students for centre_code=$centerCode, centerId=$centerId');
+      var query = supabase.from('exam_students').select();
+      if (centerCode != null && centerCode.isNotEmpty) {
+        query = query.eq('centre_code', centerCode);
+        print('✅ DEBUG: Filter by centre_code=$centerCode');
+      } else {
+        query = query.eq('centre_id', centerId);
+      }
+      if (search.isNotEmpty) {
+        query = query.ilike('student_name', '%${search.trim()}%');
+      }
+      final rows = await query;
+      print('📊 DEBUG: Got ${rows.length} exam_students rows');
+
+      // Group ALL subjects by exam_student_id
+      final studentMap = <String, List<Map<String, dynamic>>>{};
+      for (final raw in rows as List) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final examStudentId = row['exam_student_id']?.toString() ?? '';
+        if (examStudentId.isNotEmpty) {
+          studentMap.putIfAbsent(examStudentId, () => []).add(row);
+        }
+      }
+
+      // Create MsceStudent objects with ALL subjects
+      final students = <MsceStudent>[];
+      for (final examStudentId in studentMap.keys) {
+        final subjectRows = studentMap[examStudentId]!;
+        final firstRow = subjectRows.first;  // Use first row for student info
+
+        students.add(MsceStudent(
+          id: examStudentId,
+          name: firstRow['student_name']?.toString() ?? 'Unknown',
+          lastName: '',
+          srNo: firstRow['sr_no']?.toString() ?? '',
+          photoUrl: firstRow['photo_url']?.toString() ?? '',
+          hasFaceEmbedding: firstRow['face_embedding'] != null,
+          entryMarked: subjectRows.any((r) => r['entry_photo_url'] != null),
+          entryPhotoUrl: subjectRows.firstWhere(
+            (r) => r['entry_photo_url'] != null,
+            orElse: () => {},
+          )['entry_photo_url']?.toString(),
+          entryMarkedAt: subjectRows
+              .firstWhere(
+                (r) => r['entry_photo_at'] != null,
+                orElse: () => {},
+              )['entry_photo_at'] != null
+              ? DateTime.tryParse(
+                  subjectRows
+                      .firstWhere(
+                        (r) => r['entry_photo_at'] != null,
+                        orElse: () => {},
+                      )['entry_photo_at']
+                      .toString())
+              : null,
+          subjects: subjectRows,  // ✅ Store ALL subject rows
+        ));
+      }
+
+      print('✅ DEBUG: Returning ${students.length} unique students');
+      return students;
+    } catch (e) {
+      print('❌ DEBUG ERROR: $e');
+      return [];
+    }
+  }
+
+}
