@@ -115590,7 +115590,7 @@ break}}}A.cF("\ud83d\udcf8 Fetched thumbnail photos for "+a5.a+" students from e
 J.Ph(c,new A.ana())
 for(a9=0;a9<J.aD(c);++a9){b0=B.e.f8(B.c.k(a9+1),3,"0")
 c8=J.j(a5,J.j(c,a9).a)
-b1=c8==null?J.j(c,a9).e:c8
+b1=c8==null?"":c8
 J.ba(c,a9,new A.jJ(J.j(c,a9).a,J.j(c,a9).b,J.j(c,a9).c,b0,b1,J.j(c,a9).f,J.j(c,a9).r,J.j(c,a9).w,J.j(c,a9).x,J.j(c,a9).y,J.j(c,a9).z,J.j(c,a9).Q,J.j(c,a9).as,J.j(c,a9).at,J.j(c,a9).ax,J.j(c,a9).ay,J.j(c,a9).ch,J.j(c,a9).CW,J.j(c,a9).cy))}A.cF("\u2705 DEBUG: Returning "+J.aD(c)+" unique students (sorted by surname, auto-numbered)")
 q=c
 s=1

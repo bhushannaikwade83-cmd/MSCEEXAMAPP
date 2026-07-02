@@ -508,6 +508,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _studentCard(MsceStudent s) {
     final hasPhoto = s.photoUrl.isNotEmpty;
 
+    // ✅ DEBUG: Check if thumbnail photo is loaded
+    if (kDebugMode) {
+      print('🖼️ Student card: ${s.displayName}');
+      print('   photoUrl: "${s.photoUrl}"');
+      print('   hasPhoto: $hasPhoto');
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GovElevatedCard(

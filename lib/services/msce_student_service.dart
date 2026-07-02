@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../core/exam_student_name_utils.dart';
 import '../core/supabase_client.dart';
 import '../core/student_face_embedding_utils.dart';
@@ -213,7 +214,8 @@ class MsceStudentService {
     final signedById = {for (final r in matchedRows) r['id']?.toString() ?? '': r};
     for (var i = 0; i < matched.length; i++) {
       final id = matched[i].id;
-      final signedUrl = signedById[id]?['face_photo_url']?.toString() ?? matched[i].photoUrl;
+      // ✅ FIX: Use 'photo_url' from exam_students table, not 'face_photo_url'
+      final signedUrl = signedById[id]?['photo_url']?.toString() ?? matched[i].photoUrl;
 
       // Auto-assign SR No based on sorted position (001, 002, 003, ...)
       final autoSrNo = (i + 1).toString().padLeft(3, '0');
@@ -224,7 +226,7 @@ class MsceStudentService {
           name: matched[i].name,
           lastName: matched[i].lastName,
           srNo: autoSrNo, // Use auto-numbered SR No
-          photoUrl: signedUrl,
+          photoUrl: signedUrl,  // ✅ Now from exam_students.photo_url
           photoVersion: matched[i].photoVersion,
           hasFaceEmbedding: matched[i].hasFaceEmbedding,
           instituteId: matched[i].instituteId,
@@ -598,6 +600,7 @@ class MsceStudentService {
             // Use first photo_url found for this student
             if (!photoMap.containsKey(student.id)) {
               photoMap[student.id] = photoUrl;
+              if (kDebugMode) print('✅ Stored photo for ${student.id}: $photoUrl');
             }
             break;
           }
@@ -615,8 +618,9 @@ class MsceStudentService {
       // Auto-assign SR No based on sorted position (001, 002, 003, ...)
       for (var i = 0; i < students.length; i++) {
         final autoSrNo = (i + 1).toString().padLeft(3, '0');
-        // Use photo from students table if available, fallback to exam_students
-        final finalPhotoUrl = photoMap[students[i].id] ?? students[i].photoUrl;
+        // ✅ Use ONLY photo from exam_students.photo_url (already proxy URL)
+        // Never use students.photoUrl - it may trigger unnecessary API calls
+        final finalPhotoUrl = photoMap[students[i].id] ?? '';  // Empty if no photo in exam_students
 
         students[i] = MsceStudent(
           id: students[i].id,
