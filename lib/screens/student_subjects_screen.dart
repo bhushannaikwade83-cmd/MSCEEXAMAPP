@@ -106,6 +106,21 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
     setState(() => _saving.add(examStudentId));
 
     try {
+      // ✅ FIRST: Validate seat_no before doing anything
+      final seatNo = subject['seat_no']?.toString() ?? '';
+      if (seatNo.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Seat number not found - cannot mark attendance'),
+              backgroundColor: AppTheme.accentRed,
+            ),
+          );
+        }
+        setState(() => _saving.remove(examStudentId));
+        return;
+      }
+
       // ✅ Get institute ID from subject (fallback to centre_id)
       final instituteId = subject['institute_id']?.toString() ?? subject['centre_id']?.toString() ?? '';
       if (instituteId.isEmpty) {
@@ -114,6 +129,7 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
             const SnackBar(content: Text('Institute ID not found'), backgroundColor: Colors.red),
           );
         }
+        setState(() => _saving.remove(examStudentId));
         return;
       }
 
@@ -132,7 +148,7 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
       final uploadResult = await StorageService.uploadAttendancePhoto(
         instituteId: instituteId,
         folderYear: DateTime.now().year.toString(),
-        srNo: subject['seat_no']?.toString() ?? '',
+        srNo: seatNo,
         subject: subjectName,  // ✅ Fixed variable name
         date: (timestamp ?? DateTime.now()).toIso8601String().split('T').first,
         photoBytes: photoBytes,
@@ -140,20 +156,6 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
       );
 
       final photoUrl = uploadResult['url'] ?? photo.path;
-
-      // ✅ VERIFY: Check if seat number matches before saving
-      final seatNo = subject['seat_no']?.toString() ?? '';
-      if (seatNo.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ Seat number not found - cannot verify'),
-              backgroundColor: AppTheme.accentRed,
-            ),
-          );
-        }
-        return;
-      }
 
       // ✅ Verify seat number from database
       final examStudents = await supabase

@@ -80,16 +80,17 @@ async function uploadToB2(uploadUrl: any, fileBuffer: Uint8Array, fileName: stri
   return await response.json()
 }
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Max-Age": "86400",
+}
+
 serve(async (req) => {
-  // Handle CORS - Important for web
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      },
-    })
+    return new Response("ok", { headers: corsHeaders })
   }
 
   if (req.method !== "POST") {
@@ -97,7 +98,7 @@ serve(async (req) => {
       status: 405,
       headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        ...corsHeaders,
       },
     })
   }

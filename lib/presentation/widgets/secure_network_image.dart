@@ -205,7 +205,13 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
     }
 
     try {
-      final response = await http.get(Uri.parse(url));
+      // Route B2 URLs through edge function for CORS support
+      String fetchUrl = url;
+      if (url.contains('backblazeb2.com')) {
+        fetchUrl = 'https://snxcrqgodamoxwgkkqez.supabase.co/functions/v1/b2-proxy?url=${Uri.encodeComponent(url)}';
+      }
+
+      final response = await http.get(Uri.parse(fetchUrl));
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
       }
