@@ -39,8 +39,24 @@ serve(async (req) => {
       })
     }
 
-    // Fetch from B2
-    const response = await fetch(b2Url)
+    console.log("Fetching B2 URL:", b2Url)
+
+    // Fetch from B2 - B2 public URLs don't require auth, but handle 401 gracefully
+    const response = await fetch(b2Url, {
+      headers: {
+        "User-Agent": "MSCEExamApp/1.0",
+      },
+    })
+
+    if (!response.ok) {
+      console.error("B2 fetch failed:", response.status, response.statusText)
+      // Return error but with CORS headers so browser can see it
+      return new Response(JSON.stringify({ error: `B2 returned ${response.status}` }), {
+        status: response.status,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      })
+    }
+
     const buffer = await response.arrayBuffer()
 
     return new Response(buffer, {

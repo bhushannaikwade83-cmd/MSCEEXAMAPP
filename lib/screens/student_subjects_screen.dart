@@ -43,9 +43,10 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
   Future<void> _loadSubjectDetails() async {
     try {
       // Fetch all subjects for this student from exam_students table
+      // Explicitly include seat_no and other needed columns
       final rows = await supabase
           .from('exam_students')
-          .select()
+          .select('id, exam_student_id, seat_no, subject_name, subject_code, subject, exam_date, start_time, batch, centre_code, institute_id, entry_photo_url, entry_at, is_enabled')
           .eq('exam_student_id', widget.student.id);
 
       if (!mounted) return;
@@ -106,33 +107,17 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
     setState(() => _saving.add(examStudentId));
 
     try {
-      // ✅ FIRST: Get seat_no from database (most reliable source)
-      // Don't rely on subject record as it may be incomplete
-      final examStudentRecord = await supabase
-          .from('exam_students')
-          .select('seat_no')
-          .eq('id', examStudentId)
-          .maybeSingle();
+      // ✅ FIRST: Get seat_no from subject record (it's fetched with all columns in _loadSubjectDetails)
+      // Same pattern as HomeScreen uses subject['seat_no'] to verify
+      final seatNo = subject['seat_no']?.toString() ?? '';
 
-      if (examStudentRecord == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ Student subject record not found'),
-              backgroundColor: AppTheme.accentRed,
-            ),
-          );
-        }
-        setState(() => _saving.remove(examStudentId));
-        return;
-      }
+      debugPrint('📋 Subject seat_no: "$seatNo" (type: ${subject['seat_no'].runtimeType})');
 
-      final seatNo = examStudentRecord['seat_no']?.toString() ?? '';
       if (seatNo.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ Seat number not found in database'),
+            SnackBar(
+              content: Text('❌ Seat number missing. Record has: ${subject.keys.toList()}'),
               backgroundColor: AppTheme.accentRed,
             ),
           );
@@ -140,6 +125,8 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
         setState(() => _saving.remove(examStudentId));
         return;
       }
+
+      debugPrint('📝 About to upload with srNo: "$seatNo"');
 
       // ✅ Get institute ID from subject (fallback to centre_id)
       final instituteId = subject['institute_id']?.toString() ?? subject['centre_id']?.toString() ?? '';
