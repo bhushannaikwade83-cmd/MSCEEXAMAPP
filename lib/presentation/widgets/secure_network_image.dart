@@ -180,8 +180,8 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
   String _getProxiedUrl(String url) {
     if (url.contains('backblazeb2.com')) {
       // Use Supabase edge function proxy to add CORS headers
-      // Edge function: https://supabase-project.functions.supabase.co/b2-proxy?url=<encoded-b2-url>
-      final proxyUrl = 'https://uxitbdvsjjxvwoxlzfxz.supabase.co/functions/v1/b2-proxy?url=${Uri.encodeComponent(url)}';
+      // Edge function: https://snxcrqgodamoxwgkkqez.supabase.co/functions/v1/b2-proxy?url=<encoded-b2-url>
+      final proxyUrl = 'https://snxcrqgodamoxwgkkqez.supabase.co/functions/v1/b2-proxy?url=${Uri.encodeComponent(url)}';
       if (kDebugMode) debugPrint('📸 Routing B2 URL through edge function proxy: $url → $proxyUrl');
       return proxyUrl;
     }
