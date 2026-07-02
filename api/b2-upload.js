@@ -91,6 +91,64 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Handle GET/HEAD - download/fetch photos from B2
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      try {
+        const keyParam = req.query.key;
+        if (!keyParam) {
+          return res.status(400).json({ error: 'Missing key parameter' });
+        }
+
+        const key = decodeURIComponent(String(keyParam));
+        console.log(`📥 Proxying download: ${key}`);
+
+        const { bucketName, bucketId } = requireB2Config();
+        const auth = await b2AuthorizeAccount();
+
+        // Get download authorization
+        const authToken = await b2ApiPost(auth.apiUrl, 'b2_get_download_authorization', auth.authorizationToken, {
+          bucketId,
+          fileNamePrefix: key,
+          validDurationInSeconds: 3600,
+        });
+
+        // Proxy the download
+        const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+        const downloadUrl = `${auth.downloadUrl}/file/${encodeURIComponent(bucketName)}/${encodedKey}`;
+
+        const response = await fetch(downloadUrl, {
+          method: req.method,
+          headers: {
+            Authorization: authToken.authorizationToken,
+          },
+        });
+
+        if (!response.ok) {
+          console.error(`❌ B2 download failed: ${response.status}`);
+          return res.status(response.status).send('Download failed');
+        }
+
+        // Copy headers
+        const contentType = response.headers.get('content-type');
+        if (contentType) res.setHeader('Content-Type', contentType);
+        const contentLength = response.headers.get('content-length');
+        if (contentLength) res.setHeader('Content-Length', contentLength);
+
+        if (req.method === 'HEAD') {
+          res.status(200).end();
+          return;
+        }
+
+        // Stream the file
+        const buffer = await response.arrayBuffer();
+        return res.status(200).send(Buffer.from(buffer));
+      } catch (error) {
+        console.error('❌ Download error:', error.message);
+        return res.status(500).json({ error: error.message || 'Download failed' });
+      }
+    }
+
+    // Handle POST - upload photos to B2
     if (req.method === 'POST') {
       const fileName = req.headers['x-file-name'];
       const contentType = req.headers['content-type'] || 'application/octet-stream';
@@ -143,7 +201,7 @@ export default async function handler(req, res) {
 
       const proxyUrl = `/api/b2-upload?key=${encodeURIComponent(sanitizedFileName)}`;
 
-      console.log('✅ Upload successful');
+      console.log('✅ Upload successful, proxy URL:', proxyUrl);
 
       return res.status(200).json({
         success: true,
