@@ -58,12 +58,13 @@ async function sha1(data: Uint8Array): Promise<string> {
 serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      status: 200,
+    return new Response(null, {
+      status: 204,
       headers: {
-        ...corsHeaders,
+        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "86400",
       },
     })
   }

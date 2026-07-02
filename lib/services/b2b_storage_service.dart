@@ -138,7 +138,7 @@ class B2BStorageService {
     throw Exception('Invalid response from b2-storage-proxy');
   }
 
-  /// Upload a generic file to B2 and return its public URL.
+  /// Upload a generic file to B2 via Vercel API and return its proxy URL.
   ///
   /// This is used by registration and verification flows that already know
   /// the exact storage path they want to write.
@@ -156,29 +156,14 @@ class B2BStorageService {
         throw Exception('File bytes are empty');
       }
 
-      final uploadToken = await _edgeInvoke('upload_url', {});
-      final uploadUrl = (uploadToken['uploadUrl'] ?? '').toString();
-      final uploadAuthToken = (uploadToken['uploadAuthToken'] ?? '').toString();
-      final downloadUrl = (uploadToken['downloadUrl'] ?? '').toString();
-      final edgeBucketName = (uploadToken['bucketName'] ?? bucketName).toString();
+      if (kDebugMode) debugPrint('📤 Uploading to B2 via Vercel API: $trimmedPath');
 
-      if (uploadUrl.isEmpty || uploadAuthToken.isEmpty || downloadUrl.isEmpty) {
-        throw Exception('Failed to obtain secure upload token');
-      }
-
-      final sha1Hash = sha1.convert(fileBytes).toString();
-      final encodedPath = Uri.encodeComponent(trimmedPath);
-
-      if (kDebugMode) debugPrint('📤 Uploading to B2: $uploadUrl');
-
+      // Upload via Vercel API endpoint
       final uploadResponse = await http.post(
-        Uri.parse(uploadUrl),
+        Uri.parse('https://msceexamapp.vercel.app/api/b2-upload'),
         headers: {
-          'Authorization': uploadAuthToken,
           'Content-Type': contentType,
-          'X-Bz-File-Name': encodedPath,
-          'X-Bz-Content-Type': contentType,
-          'X-Bz-Content-Sha1': sha1Hash,
+          'X-File-Name': trimmedPath,
         },
         body: fileBytes,
       ).timeout(
@@ -191,9 +176,16 @@ class B2BStorageService {
         throw Exception('Upload failed: ${uploadResponse.statusCode} ${uploadResponse.body}');
       }
 
-      if (kDebugMode) debugPrint('✅ B2 upload success');
+      final uploadJson = jsonDecode(uploadResponse.body) as Map<String, dynamic>;
+      final proxyUrl = (uploadJson['url'] ?? '').toString();
 
-      return '$downloadUrl/file/$edgeBucketName/$encodedPath';
+      if (proxyUrl.isEmpty) {
+        throw Exception('No proxy URL returned from upload');
+      }
+
+      if (kDebugMode) debugPrint('✅ B2 upload success: $proxyUrl');
+
+      return proxyUrl;
     } catch (e) {
       if (kDebugMode) debugPrint('❌ uploadFile failed: $e');
       rethrow;
@@ -233,26 +225,14 @@ class B2BStorageService {
         photoType: photoType,
       );
 
-      final uploadToken = await _edgeInvoke('upload_url', {});
-      final uploadUrl = (uploadToken['uploadUrl'] ?? '').toString();
-      final uploadAuthToken = (uploadToken['uploadAuthToken'] ?? '').toString();
-      final downloadUrl = (uploadToken['downloadUrl'] ?? '').toString();
-      final edgeBucketName = (uploadToken['bucketName'] ?? bucketName).toString();
+      if (kDebugMode) debugPrint('📤 Uploading attendance photo via Vercel API: $storagePath');
 
-      if (uploadUrl.isEmpty || uploadAuthToken.isEmpty || downloadUrl.isEmpty) {
-        throw Exception('Failed to obtain secure upload token');
-      }
-
-      final sha1Hash = sha1.convert(photoBytes).toString();
-      final encodedPath = Uri.encodeComponent(storagePath);
+      // Upload via Vercel API endpoint
       final uploadResponse = await http.post(
-        Uri.parse(uploadUrl),
+        Uri.parse('https://msceexamapp.vercel.app/api/b2-upload'),
         headers: {
-          'Authorization': uploadAuthToken,
           'Content-Type': 'image/jpeg',
-          'X-Bz-File-Name': encodedPath,
-          'X-Bz-Content-Type': 'image/jpeg',
-          'X-Bz-Content-Sha1': sha1Hash,
+          'X-File-Name': storagePath,
         },
         body: photoBytes,
       );
@@ -262,12 +242,17 @@ class B2BStorageService {
       }
 
       final uploadJson = jsonDecode(uploadResponse.body) as Map<String, dynamic>;
+      final proxyUrl = (uploadJson['url'] ?? '').toString();
       final fileId = (uploadJson['fileId'] ?? '').toString();
-      final publicUrl = '$downloadUrl/file/$edgeBucketName/$encodedPath';
+
+      if (proxyUrl.isEmpty) {
+        throw Exception('No proxy URL returned from upload');
+      }
+
       return {
-        'url': publicUrl,
+        'url': proxyUrl,
         'path': storagePath,
-        'bucket': edgeBucketName,
+        'bucket': bucketName,
         'fileId': fileId,
       };
     } catch (e) {
