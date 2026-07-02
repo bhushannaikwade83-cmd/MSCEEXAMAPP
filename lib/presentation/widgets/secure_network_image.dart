@@ -95,23 +95,22 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
       return explicit;
     }
 
-    String? baseKey;
+    // Simple cache key from storage path or image URL
+    final p = widget.storagePath?.trim();
+    if (p != null && p.isNotEmpty) {
+      final v = widget.version?.trim();
+      if (v != null && v.isNotEmpty) return '${p}_$v';
+      return p;
+    }
+
     final u = widget.imageUrl?.trim();
     if (u != null && u.isNotEmpty) {
-      baseKey = StorageService.b2ObjectPathFromPhotoUrl(u);
-    }
-
-    if (baseKey == null || baseKey.isEmpty) {
-      final p = widget.storagePath?.trim();
-      if (p != null && p.isNotEmpty) baseKey = p;
-    }
-
-    if (baseKey != null && baseKey.isNotEmpty) {
       final v = widget.version?.trim();
-      if (v != null && v.isNotEmpty) return '${baseKey}_$v';
-      return baseKey;
+      if (v != null && v.isNotEmpty) return '${u}_$v';
+      return u;
     }
-    return null;
+
+    return explicit;
   }
 
   void _resetImageState() {
@@ -143,13 +142,9 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
   }
 
   Future<void> _loadPhotoUrl() async {
-    // Use the automatic temporary URL generation method
-    // This handles all cases: storagePath, photoUrl (signed/unsigned), etc.
+    // Use the provided URL directly (from B2 via edge function, already public)
     try {
-      final urlToUse = await StorageService.getTemporaryPhotoUrl(
-        photoUrl: widget.imageUrl,
-        storagePath: widget.storagePath,
-      );
+      final urlToUse = widget.imageUrl?.trim();
 
       if (mounted) {
         setState(() {
@@ -333,17 +328,8 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
       // Minimal delay for retry
       await Future.delayed(const Duration(milliseconds: 100));
 
-      // Clear URL cache for fresh signing
-      if (widget.storagePath != null && widget.storagePath!.isNotEmpty) {
-        await StorageService.clearUrlCache();
-      }
-
-      // Use the automatic temporary URL generation method for retry
-      // This handles all cases automatically
-      final urlToRetry = await StorageService.getTemporaryPhotoUrl(
-        photoUrl: failedUrl ?? widget.imageUrl,
-        storagePath: widget.storagePath,
-      );
+      // Retry with the same URL (B2 URLs from edge function are public, no signing needed)
+      final urlToRetry = failedUrl ?? widget.imageUrl;
 
       if (urlToRetry != null && urlToRetry.isNotEmpty && mounted) {
         setState(() {
