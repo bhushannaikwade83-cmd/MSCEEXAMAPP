@@ -84,7 +84,23 @@ serve(async (req: Request) => {
         })
       }
 
-      const fileBytes = new Uint8Array(await req.arrayBuffer())
+      // Parse JSON body (file is base64-encoded)
+      const body = await req.json()
+      const base64File = body.file
+
+      if (!base64File) {
+        return new Response(JSON.stringify({ error: "Missing file data" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      }
+
+      // Decode base64 to binary
+      const binaryString = atob(base64File)
+      const fileBytes = new Uint8Array(binaryString.length)
+      for (let i = 0; i < binaryString.length; i++) {
+        fileBytes[i] = binaryString.charCodeAt(i)
+      }
 
       console.log(`📤 Uploading to B2: ${key} (${fileBytes.length} bytes)`)
 
