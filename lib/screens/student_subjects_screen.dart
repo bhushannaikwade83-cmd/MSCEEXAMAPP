@@ -118,8 +118,9 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
       }
 
       // ✅ Read photo bytes and compress to under 100KB
-      final photoFile = File(photo.path);
-      var photoBytes = await photoFile.readAsBytes();
+      // XFile.readAsBytes works on all platforms including web
+      // (dart:io File does not exist on web).
+      var photoBytes = await photo.readAsBytes();
       debugPrint('📸 Original photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
 
       // ✅ Compress if larger than 100KB
@@ -266,8 +267,17 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
   Future<Uint8List> _compressPhotoToUnder100KB(Uint8List photoBytes) async {
     try {
       // Decode image
-      final image = img.decodeImage(photoBytes);
-      if (image == null) return photoBytes;
+      final decoded = img.decodeImage(photoBytes);
+      if (decoded == null) return photoBytes;
+
+      // ✅ Bake EXIF orientation into the pixels BEFORE re-encoding.
+      // encodeJpg strips EXIF metadata; without baking first, portrait
+      // photos (stored by cameras as rotated pixels + EXIF tag) would be
+      // saved permanently sideways.
+      img.Image image = decoded;
+      try {
+        image = img.bakeOrientation(image);
+      } catch (_) {}
 
       // Start with quality 90 and reduce if needed
       int quality = 90;

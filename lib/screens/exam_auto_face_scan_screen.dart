@@ -24,7 +24,8 @@ import '../services/distance_check_service.dart'
 import '../services/exam_entry_service.dart';
 import '../services/session_service.dart';
 import '../services/exam_centre_student_cache.dart';
-import '../services/anti_spoof_service.dart';
+import '../services/anti_spoof_service_stub.dart'
+    if (dart.library.io) '../services/anti_spoof_service.dart';
 import '../services/pre_capture_liveness_tracker.dart';
 import '../services/production_face_pipeline_service.dart';
 import '../services/student_face_match_index.dart';

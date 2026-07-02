@@ -7,7 +7,8 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
 import '../core/camera_lens_utils.dart';
 import '../core/camera_stream_pipeline.dart';
-import '../services/anti_spoof_service.dart';
+import '../services/anti_spoof_service_stub.dart'
+    if (dart.library.io) '../services/anti_spoof_service.dart';
 import '../services/distance_check_service.dart' show DistanceStatus;
 import '../services/location_service.dart';
 import '../services/pre_capture_liveness_tracker.dart';
@@ -40,7 +41,7 @@ class _ExamSubjectCameraScreenState extends State<ExamSubjectCameraScreen> {
   );
 
   late CameraController _cameraController;
-  late FaceDetector _faceDetector;
+  FaceDetector? _faceDetector;
   List<CameraDescription> _availableCameras = [];
   int _selectedCameraIndex = 0;
   bool _isStreaming = false;
@@ -77,15 +78,25 @@ class _ExamSubjectCameraScreenState extends State<ExamSubjectCameraScreen> {
       }
       await _initController(_availableCameras[_selectedCameraIndex]);
 
-      _faceDetector = FaceDetector(
-        options: FaceDetectorOptions(
-          performanceMode: FaceDetectorMode.accurate,  // ✅ Changed from .fast to .accurate
-          enableClassification: true,
-        ),
-      );
+      // Web: no ML Kit / image stream support in browsers — plain preview
+      // with a manual capture button instead.
+      if (!kIsWeb) {
+        _faceDetector = FaceDetector(
+          options: FaceDetectorOptions(
+            performanceMode: FaceDetectorMode.accurate,  // ✅ Changed from .fast to .accurate
+            enableClassification: true,
+          ),
+        );
+      }
 
       if (mounted) {
-        setState(() => _isInitializing = false);
+        setState(() {
+          _isInitializing = false;
+          if (kIsWeb) {
+            _canCapture = true;
+            _livenessMessage = 'Position the face and tap Capture';
+          }
+        });
         _startStream();
       }
     } catch (e) {
@@ -102,16 +113,27 @@ class _ExamSubjectCameraScreenState extends State<ExamSubjectCameraScreen> {
       cam,
       ResolutionPreset.high,  // ✅ Changed from .low to .high for better quality
       enableAudio: false,
-      imageFormatGroup:
-          Platform.isAndroid ? ImageFormatGroup.nv21 : ImageFormatGroup.bgra8888,
+      imageFormatGroup: kIsWeb
+          ? ImageFormatGroup.jpeg
+          : (Platform.isAndroid
+              ? ImageFormatGroup.nv21
+              : ImageFormatGroup.bgra8888),
     );
     await _cameraController.initialize();
 
-    // ✅ Enable autofocus for sharp images
-    await _cameraController.setFocusMode(FocusMode.auto);
+    if (kIsWeb) {
+      // Web: focus/exposure modes are unsupported in browsers — best effort.
+      try {
+        await _cameraController.setFocusMode(FocusMode.auto);
+        await _cameraController.setExposureMode(ExposureMode.auto);
+      } catch (_) {}
+    } else {
+      // ✅ Enable autofocus for sharp images
+      await _cameraController.setFocusMode(FocusMode.auto);
 
-    // ✅ Set exposure mode to auto for proper brightness
-    await _cameraController.setExposureMode(ExposureMode.auto);
+      // ✅ Set exposure mode to auto for proper brightness
+      await _cameraController.setExposureMode(ExposureMode.auto);
+    }
   }
 
   Future<void> _toggleCamera() async {
@@ -133,6 +155,9 @@ class _ExamSubjectCameraScreenState extends State<ExamSubjectCameraScreen> {
   }
 
   void _startStream() {
+    // Web: camera image streaming + ML Kit are unavailable; capture stays
+    // manual (_canCapture is set to true after init).
+    if (kIsWeb) return;
     if (_isStreaming) return;
     _isStreaming = true;
     _cameraController.startImageStream((CameraImage image) async {
@@ -149,7 +174,7 @@ class _ExamSubjectCameraScreenState extends State<ExamSubjectCameraScreen> {
         if (mlInput == null) return;
 
         final rotation = mlInput.rotation;
-        final faces = await _faceDetector.processImage(mlInput.inputImage);
+        final faces = await _faceDetector!.processImage(mlInput.inputImage);
         if (!mounted) return;
 
         if (faces.isEmpty) {
@@ -294,7 +319,7 @@ class _ExamSubjectCameraScreenState extends State<ExamSubjectCameraScreen> {
       _cameraController.stopImageStream();
     }
     _cameraController.dispose();
-    _faceDetector.close();
+    _faceDetector?.close();
     super.dispose();
   }
 

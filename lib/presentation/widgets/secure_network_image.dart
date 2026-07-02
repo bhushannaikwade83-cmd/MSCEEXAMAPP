@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, debugPrint;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
@@ -75,9 +75,15 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
   String? _currentUrl;
   bool _isRetrying = false;
   bool _isLoadingImageBytes = false;
+  bool _webFetchFailed = false;
   int _retryCount = 0;
   Uint8List? _imageBytes;
   static const int _maxRetries = 2;
+
+  /// Web-only in-memory cache of orientation-baked bytes, so photos are not
+  /// re-fetched/re-decoded on every list scroll rebuild.
+  static final Map<String, Uint8List> _webBakedCache = {};
+  static const int _webBakedCacheMaxEntries = 300;
 
   /// Stable cache key so disk cache works across refreshed signed URLs.
   /// [cacheKey] (student id) always wins — never share cache entries between rows.
@@ -113,6 +119,7 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
     _imageBytes = null;
     _isLoadingImageBytes = false;
     _isRetrying = false;
+    _webFetchFailed = false;
     _retryCount = 0;
   }
 
@@ -152,7 +159,14 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
       }
 
       if (urlToUse != null && urlToUse.isNotEmpty) {
-        await _loadAndValidateImageBytes(urlToUse);
+        if (kIsWeb) {
+          // Web: fetch bytes and bake EXIF orientation into the pixels so
+          // photos render upright on ALL browsers (Safari's decoder ignores
+          // EXIF). Falls back to an <img> element if the fetch is blocked.
+          await _loadWebImageBytes(urlToUse);
+        } else {
+          await _loadAndValidateImageBytes(urlToUse);
+        }
       }
     } catch (e) {
       if (kDebugMode) debugPrint('❌ Error generating temporary photo URL: $e');
@@ -164,6 +178,92 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
           _isLoadingImageBytes = false;
         });
       }
+    }
+  }
+
+  /// Web-only: fetch photo bytes and bake EXIF orientation into the pixels.
+  ///
+  /// Safari (and Chrome on iOS, which uses Safari's engine) decodes images in
+  /// CanvasKit ignoring EXIF rotation, showing portrait photos sideways. By
+  /// physically rotating the pixels once here, the displayed image is
+  /// identical and upright on every browser. Results are cached in memory.
+  Future<void> _loadWebImageBytes(String url) async {
+    final cacheKey = _diskCacheKey ?? url;
+
+    final cached = _webBakedCache[cacheKey];
+    if (cached != null) {
+      if (!mounted) return;
+      setState(() {
+        _imageBytes = cached;
+        _isLoadingImageBytes = false;
+        _webFetchFailed = false;
+      });
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoadingImageBytes = true;
+        _imageBytes = null;
+        _webFetchFailed = false;
+      });
+    }
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+      var bytes = response.bodyBytes;
+
+      // Bake EXIF orientation into pixels (only re-encode when needed).
+      try {
+        final decoded = img.decodeImage(bytes);
+        if (decoded != null) {
+          int orientation = 1;
+          try {
+            orientation =
+                decoded.exif.imageIfd['Orientation']?.toInt() ?? 1;
+          } catch (_) {}
+          if (orientation != 1) {
+            final baked = img.bakeOrientation(decoded);
+            bytes = Uint8List.fromList(img.encodeJpg(baked, quality: 90));
+          } else if (decoded.width > decoded.height) {
+            // Recovery heuristic: student photos are portrait. A photo that
+            // is physically landscape with no EXIF tag was corrupted by an
+            // earlier upload pipeline that stripped EXIF without rotating
+            // the pixels. Rotate 90° CW (EXIF orientation 6 — by far the
+            // most common camera orientation) to restore portrait.
+            final rotated = img.copyRotate(decoded, angle: 90);
+            bytes = Uint8List.fromList(img.encodeJpg(rotated, quality: 90));
+          }
+        }
+      } catch (e) {
+        // Decode failed — keep raw bytes; Image.memory may still render them.
+        if (kDebugMode) debugPrint('⚠️ Web EXIF bake skipped: $e');
+      }
+
+      if (_webBakedCache.length >= _webBakedCacheMaxEntries) {
+        _webBakedCache.clear();
+      }
+      _webBakedCache[cacheKey] = bytes;
+
+      if (!mounted) return;
+      setState(() {
+        _imageBytes = bytes;
+        _isLoadingImageBytes = false;
+        _webFetchFailed = false;
+      });
+    } catch (e) {
+      // Network/CORS failure — build() falls back to an <img> element, which
+      // browsers can display cross-origin and which applies EXIF natively.
+      if (kDebugMode) debugPrint('⚠️ Web byte fetch failed, using <img>: $e');
+      if (!mounted) return;
+      setState(() {
+        _imageBytes = null;
+        _isLoadingImageBytes = false;
+        _webFetchFailed = true;
+      });
     }
   }
 
@@ -266,8 +366,76 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
     }
   }
 
+  Widget _buildErrorWidget() {
+    return widget.errorWidget ??
+        Container(
+          width: widget.width,
+          height: widget.height,
+          color: widget.backgroundColor ?? Colors.white.withValues(alpha: 0.1),
+          child: const Center(
+            child: Icon(
+              Icons.broken_image,
+              color: Colors.white,
+              size: 40,
+            ),
+          ),
+        );
+  }
+
+  Widget _buildPlaceholder() {
+    return widget.placeholder ??
+        ShimmerEffect(
+          width: widget.width ?? double.infinity,
+          height: widget.height ?? double.infinity,
+          borderRadius: BorderRadius.circular(8),
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Web rendering:
+    // 1) Preferred: orientation-baked bytes via Image.memory — pixels are
+    //    physically upright, so every browser (incl. iOS Safari/Chrome)
+    //    shows them identically.
+    // 2) Fallback (fetch blocked by CORS): HTML <img> element, which
+    //    displays cross-origin images and applies EXIF natively.
+    if (kIsWeb) {
+      if (_currentUrl == null || _currentUrl!.isEmpty || _isRetrying) {
+        return _buildPlaceholder();
+      }
+      if (_isLoadingImageBytes) {
+        return _buildPlaceholder();
+      }
+      if (_imageBytes != null && _imageBytes!.isNotEmpty) {
+        return Image.memory(
+          _imageBytes!,
+          fit: widget.fit,
+          width: widget.width,
+          height: widget.height,
+          errorBuilder: (context, error, stackTrace) {
+            if (kDebugMode) debugPrint('❌ Web image decode failed: $error');
+            return _buildErrorWidget();
+          },
+        );
+      }
+      if (_webFetchFailed) {
+        return Image.network(
+          _currentUrl!,
+          fit: widget.fit,
+          width: widget.width,
+          height: widget.height,
+          webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+          loadingBuilder: (context, child, progress) =>
+              progress == null ? child : _buildPlaceholder(),
+          errorBuilder: (context, error, stackTrace) {
+            if (kDebugMode) debugPrint('❌ Web image load failed: $error');
+            return _buildErrorWidget();
+          },
+        );
+      }
+      return _buildPlaceholder();
+    }
+
     // Show placeholder while loading or retrying
     if (_currentUrl == null ||
         _currentUrl!.isEmpty ||

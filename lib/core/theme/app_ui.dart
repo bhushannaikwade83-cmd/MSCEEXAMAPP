@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 abstract final class AppUI {
   static const String portalPrimaryLine =
-      'MSCE Exam Centre App  |  एमएससीई परीक्षा केंद्र अॅप';
+      'MSCE Exam Centre App  |  एमएससीई परीक्षा केंद्र ॲप';
   static const String portalSecondaryLineDefault =
       'MSCE Exam Centre Attendance System';
   static const String officialBadgeLabel = 'OFFICIAL';

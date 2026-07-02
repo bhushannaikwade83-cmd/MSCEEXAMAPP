@@ -6,7 +6,8 @@ import '../core/app_db.dart';
 import '../core/face_matching_thresholds.dart';
 import '../core/production_face_recognition_constants.dart';
 import '../core/student_face_embedding_utils.dart';
-import 'anti_spoof_service.dart';
+import 'anti_spoof_service_stub.dart'
+    if (dart.library.io) 'anti_spoof_service.dart';
 import 'exam_centre_student_cache.dart';
 import 'face_recognition_service.dart';
 import 'insightface_api_service.dart';

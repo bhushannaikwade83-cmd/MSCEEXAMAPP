@@ -11,7 +11,8 @@ import '../core/stream_face_frame.dart';
 
 import '../core/live_face_box_state.dart';
 import '../core/streaming_blink_detector.dart';
-import 'anti_spoof_service.dart';
+import 'anti_spoof_service_stub.dart'
+    if (dart.library.io) 'anti_spoof_service.dart';
 import 'device_performance_service.dart';
 import 'distance_check_service.dart'
     show DistanceProfile, DistanceStatus, DistanceCheckService;

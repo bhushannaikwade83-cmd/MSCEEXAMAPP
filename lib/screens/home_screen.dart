@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:camera/camera.dart' show XFile;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -755,7 +756,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                       if (result != null && mounted) {
                         // ✅ Handle photo with location and timestamp
-                        final photo = result['photo'];
+                        final photo = result['photo'] as XFile;
                         final latitude = result['latitude'] as double?;
                         final longitude = result['longitude'] as double?;
                         final timestamp = result['timestamp'] as DateTime?;
@@ -768,7 +769,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         _saveEntryWithPhoto(
                           student: s,
                           subject: subject,
-                          photoPath: photo.path,
+                          photo: photo,
                           latitude: latitude,
                           longitude: longitude,
                           timestamp: timestamp,
@@ -912,7 +913,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _saveEntryWithPhoto({
     required MsceStudent student,
     required Map<String, dynamic> subject,
-    required String photoPath,
+    required XFile photo,
     double? latitude,
     double? longitude,
     DateTime? timestamp,
@@ -935,8 +936,9 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       // ✅ Read photo bytes and compress to under 100KB
-      final photoFile = File(photoPath);
-      var photoBytes = await photoFile.readAsBytes();
+      // XFile.readAsBytes works on all platforms including web
+      // (dart:io File does not exist on web).
+      var photoBytes = await photo.readAsBytes();
       print('📸 Original photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
 
       // ✅ Compress if larger than 100KB
@@ -967,7 +969,7 @@ class _HomeScreenState extends State<HomeScreen> {
         photoType: 'entry',
       );
 
-      final photoUrl = uploadResult['url'] ?? photoPath;
+      final photoUrl = uploadResult['url'] ?? photo.path;
       print('✅ Photo uploaded: $photoUrl');
 
       // ✅ VERIFY: Check if seat number matches before saving
@@ -1077,8 +1079,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<Uint8List> _compressPhotoToUnder100KB(Uint8List photoBytes) async {
     try {
       // Decode image
-      final image = img.decodeImage(photoBytes);
-      if (image == null) return photoBytes;
+      final decoded = img.decodeImage(photoBytes);
+      if (decoded == null) return photoBytes;
+
+      // ✅ Bake EXIF orientation into the pixels BEFORE re-encoding.
+      // encodeJpg strips EXIF metadata; without baking first, portrait
+      // photos (stored by cameras as rotated pixels + EXIF tag) would be
+      // saved permanently sideways.
+      img.Image image = decoded;
+      try {
+        image = img.bakeOrientation(image);
+      } catch (_) {}
 
       // Start with quality 90 and reduce if needed
       int quality = 90;

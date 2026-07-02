@@ -5,7 +5,8 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, debugPrint;
 import 'package:flutter/services.dart';
 
 import '../core/production_face_recognition_constants.dart';
-import 'anti_spoof_service.dart';
+import 'anti_spoof_service_stub.dart'
+    if (dart.library.io) 'anti_spoof_service.dart';
 
 /// RAM / CPU tuning for institute phones (2–16 GB). Camera ML is throttled on
 /// all Android to limit heat; 2–4 GB get the strictest limits.
