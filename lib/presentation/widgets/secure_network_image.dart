@@ -95,22 +95,23 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
       return explicit;
     }
 
-    // Simple cache key from storage path or image URL
-    final p = widget.storagePath?.trim();
-    if (p != null && p.isNotEmpty) {
-      final v = widget.version?.trim();
-      if (v != null && v.isNotEmpty) return '${p}_$v';
-      return p;
-    }
-
+    String? baseKey;
     final u = widget.imageUrl?.trim();
     if (u != null && u.isNotEmpty) {
-      final v = widget.version?.trim();
-      if (v != null && v.isNotEmpty) return '${u}_$v';
-      return u;
+      baseKey = StorageService.b2ObjectPathFromPhotoUrl(u);
     }
 
-    return explicit;
+    if (baseKey == null || baseKey.isEmpty) {
+      final p = widget.storagePath?.trim();
+      if (p != null && p.isNotEmpty) baseKey = p;
+    }
+
+    if (baseKey != null && baseKey.isNotEmpty) {
+      final v = widget.version?.trim();
+      if (v != null && v.isNotEmpty) return '${baseKey}_$v';
+      return baseKey;
+    }
+    return null;
   }
 
   void _resetImageState() {
@@ -142,9 +143,13 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
   }
 
   Future<void> _loadPhotoUrl() async {
-    // Use the provided URL directly (from B2 via edge function, already public)
+    // Use the automatic temporary URL generation method
+    // This handles all cases: storagePath, photoUrl (signed/unsigned), etc.
     try {
-      final urlToUse = widget.imageUrl?.trim();
+      final urlToUse = await StorageService.getTemporaryPhotoUrl(
+        photoUrl: widget.imageUrl,
+        storagePath: widget.storagePath,
+      );
 
       if (mounted) {
         setState(() {
@@ -176,18 +181,6 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
     }
   }
 
-  /// Route B2 URLs through Supabase edge function proxy for CORS support
-  String _getProxiedUrl(String url) {
-    if (url.contains('backblazeb2.com')) {
-      // Use Supabase edge function proxy to add CORS headers
-      // Edge function: https://snxcrqgodamoxwgkkqez.supabase.co/functions/v1/b2-proxy?url=<encoded-b2-url>
-      final proxyUrl = 'https://snxcrqgodamoxwgkkqez.supabase.co/functions/v1/b2-proxy?url=${Uri.encodeComponent(url)}';
-      if (kDebugMode) debugPrint('📸 Routing B2 URL through edge function proxy: $url → $proxyUrl');
-      return proxyUrl;
-    }
-    return url;
-  }
-
   /// Web-only: fetch photo bytes and bake EXIF orientation into the pixels.
   ///
   /// Safari (and Chrome on iOS, which uses Safari's engine) decodes images in
@@ -195,8 +188,6 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
   /// physically rotating the pixels once here, the displayed image is
   /// identical and upright on every browser. Results are cached in memory.
   Future<void> _loadWebImageBytes(String url) async {
-    // Route B2 URLs through CORS proxy
-    final urlToFetch = _getProxiedUrl(url);
     final cacheKey = _diskCacheKey ?? url;
 
     final cached = _webBakedCache[cacheKey];
@@ -219,7 +210,7 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
     }
 
     try {
-      final response = await http.get(Uri.parse(urlToFetch));
+      final response = await http.get(Uri.parse(url));
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
       }
@@ -342,8 +333,17 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
       // Minimal delay for retry
       await Future.delayed(const Duration(milliseconds: 100));
 
-      // Retry with the same URL (B2 URLs from edge function are public, no signing needed)
-      final urlToRetry = failedUrl ?? widget.imageUrl;
+      // Clear URL cache for fresh signing
+      if (widget.storagePath != null && widget.storagePath!.isNotEmpty) {
+        await StorageService.clearUrlCache();
+      }
+
+      // Use the automatic temporary URL generation method for retry
+      // This handles all cases automatically
+      final urlToRetry = await StorageService.getTemporaryPhotoUrl(
+        photoUrl: failedUrl ?? widget.imageUrl,
+        storagePath: widget.storagePath,
+      );
 
       if (urlToRetry != null && urlToRetry.isNotEmpty && mounted) {
         setState(() {
@@ -419,10 +419,8 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
         );
       }
       if (_webFetchFailed) {
-        // Use proxied URL for fallback <img> element (handles CORS)
-        final proxiedUrl = _getProxiedUrl(_currentUrl!);
         return Image.network(
-          proxiedUrl,
+          _currentUrl!,
           fit: widget.fit,
           width: widget.width,
           height: widget.height,
@@ -430,7 +428,7 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
           loadingBuilder: (context, child, progress) =>
               progress == null ? child : _buildPlaceholder(),
           errorBuilder: (context, error, stackTrace) {
-            if (kDebugMode) debugPrint('❌ Web image load failed (via proxy): $error');
+            if (kDebugMode) debugPrint('❌ Web image load failed: $error');
             return _buildErrorWidget();
           },
         );

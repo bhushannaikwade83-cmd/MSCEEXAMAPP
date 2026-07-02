@@ -4,7 +4,6 @@ import '../core/student_face_embedding_utils.dart';
 import 'exam_centre_student_cache.dart';
 import 'storage_service.dart';
 import 'student_face_match_index.dart';
-import 'api_cache_service.dart';
 
 class MsceStudent {
   MsceStudent({
@@ -319,9 +318,17 @@ class MsceStudentService {
   }
 
   Future<void> _signPhotoUrls(List<Map<String, dynamic>> rows) async {
-    // B2 URLs from edge function are already public, no signing needed
-    // This method is kept for compatibility but does nothing now
-    return;
+    await Future.wait(
+      rows.map((row) async {
+        final raw = row['face_photo_url']?.toString() ?? '';
+        if (raw.isEmpty) return;
+        try {
+          row['face_photo_url'] = await StorageService.ensureSignedUrl(raw);
+        } catch (_) {
+          row['face_photo_url'] = raw;
+        }
+      }),
+    );
   }
 
   Future<List<ExamCenterRosterEntry>> _loadRoster(String centerId) async {
@@ -493,14 +500,6 @@ class MsceStudentService {
   }) async {
     if (!isSupabaseConfigured) return [];
     try {
-      // ✅ Check cache first (saves egress)
-      final cacheKey = 'exam_students_${centerCode ?? centerId}_$search';
-      final cached = await ApiCacheService.getCachedResponse(cacheKey);
-      if (cached != null && cached is List) {
-        print('✅ CACHE HIT: Using cached students (saves egress)');
-        return _processExamStudents(cached.cast<Map<String, dynamic>>());
-      }
-
       print('🔍 DEBUG: Querying exam_students for centre_code=$centerCode, centerId=$centerId');
       var query = supabase.from('exam_students').select();
       if (centerCode != null && centerCode.isNotEmpty) {
@@ -516,14 +515,6 @@ class MsceStudentService {
       // ✅ Order by seat_no for consistent data (photo linked to seat_no)
       final rows = await query.order('seat_no', ascending: true);
       print('📊 DEBUG: Got ${rows.length} exam_students rows');
-
-      // ✅ Cache the response (24 hour TTL)
-      await ApiCacheService.cacheResponse(
-        key: cacheKey,
-        data: rows,
-        ttl: const Duration(hours: 24),
-      );
-      print('💾 CACHED: Saved ${rows.length} rows to local cache');
 
       // ✅ Group ALL subjects by STUDENT NAME (not exam_student_id - same student may have different IDs per subject)
       final studentMap = <String, List<Map<String, dynamic>>>{};
@@ -661,48 +652,6 @@ class MsceStudentService {
       print('❌ DEBUG ERROR: $e');
       return [];
     }
-  }
-
-  /// Helper: Process exam_students rows into MsceStudent objects
-  List<MsceStudent> _processExamStudents(List<Map<String, dynamic>> rows) {
-    final studentMap = <String, List<Map<String, dynamic>>>{};
-    final studentIdMap = <String, String>{};
-
-    for (final row in rows) {
-      final studentName = row['student_name']?.toString() ?? '';
-      final examStudentId = row['exam_student_id']?.toString() ?? '';
-
-      if (studentName.isNotEmpty) {
-        studentMap.putIfAbsent(studentName, () => []).add(row);
-        if (!studentIdMap.containsKey(studentName)) {
-          studentIdMap[studentName] = examStudentId;
-        }
-      }
-    }
-
-    final students = <MsceStudent>[];
-    for (final studentName in studentMap.keys) {
-      final subjectRows = studentMap[studentName]!;
-      final firstRow = subjectRows.first;
-      final examStudentId = studentIdMap[studentName] ?? '';
-
-      final fullName = firstRow['student_name']?.toString() ?? 'Unknown';
-      final nameParts = fullName.trim().split(RegExp(r'\s+'));
-      final lastName = nameParts.length > 1 ? nameParts.last : '';
-
-      students.add(MsceStudent(
-        id: examStudentId,
-        name: fullName,
-        lastName: lastName,
-        srNo: firstRow['sr_no']?.toString() ?? '',
-        photoUrl: firstRow['photo_url']?.toString() ?? '',
-        hasFaceEmbedding: firstRow['face_embedding'] != null,
-        entryMarked: subjectRows.any((r) => r['entry_photo_url'] != null),
-        subjects: subjectRows,
-      ));
-    }
-
-    return students;
   }
 
 }

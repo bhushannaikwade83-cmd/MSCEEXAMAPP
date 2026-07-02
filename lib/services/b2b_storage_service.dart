@@ -201,28 +201,10 @@ class B2BStorageService {
     String? photoType,
   }) async {
     try {
-      if (kDebugMode) {
-        debugPrint('🔍 uploadAttendancePhoto validation:');
-        debugPrint('  instituteId: "$instituteId"');
-        debugPrint('  folderYear: "$folderYear"');
-        debugPrint('  rollNumber: "$rollNumber" (empty=${rollNumber.isEmpty}, type=${rollNumber.runtimeType})');
-        debugPrint('  subject: "$subject"');
-        debugPrint('  photoBytes size: ${photoBytes.length}');
-      }
-
       final instituteIdError = ValidationService.validateInstituteId(instituteId);
       if (instituteIdError != null) throw Exception('Invalid institute ID: $instituteIdError');
-
-      // For seat_no (rollNumber), allow any non-empty value up to 20 chars
-      // Don't enforce regex validation since seat_no format varies
-      final trimmedRollNumber = rollNumber.trim();
-      if (trimmedRollNumber.isEmpty) {
-        throw Exception('Roll number (seat_no) is required');
-      }
-      if (trimmedRollNumber.length > 20) {
-        throw Exception('Roll number exceeds 20 characters');
-      }
-
+      final rollNumberError = ValidationService.validateRollNumber(rollNumber);
+      if (rollNumberError != null) throw Exception('Invalid roll number: $rollNumberError');
       final subjectError = ValidationService.validateSubject(subject);
       if (subjectError != null) throw Exception('Invalid subject: $subjectError');
       final fileSizeError = ValidationService.validateFileSize(photoBytes.length, maxSizeKB: 100);

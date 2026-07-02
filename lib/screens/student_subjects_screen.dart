@@ -43,10 +43,9 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
   Future<void> _loadSubjectDetails() async {
     try {
       // Fetch all subjects for this student from exam_students table
-      // Explicitly include seat_no and other needed columns
       final rows = await supabase
           .from('exam_students')
-          .select('id, exam_student_id, seat_no, subject_name, subject_code, subject, exam_date, start_time, batch, centre_code, institute_id, entry_photo_url, entry_at, is_enabled')
+          .select()
           .eq('exam_student_id', widget.student.id);
 
       if (!mounted) return;
@@ -107,27 +106,6 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
     setState(() => _saving.add(examStudentId));
 
     try {
-      // ✅ FIRST: Get seat_no from subject record (it's fetched with all columns in _loadSubjectDetails)
-      // Same pattern as HomeScreen uses subject['seat_no'] to verify
-      final seatNo = subject['seat_no']?.toString() ?? '';
-
-      debugPrint('📋 Subject seat_no: "$seatNo" (type: ${subject['seat_no'].runtimeType})');
-
-      if (seatNo.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Seat number missing. Record has: ${subject.keys.toList()}'),
-              backgroundColor: AppTheme.accentRed,
-            ),
-          );
-        }
-        setState(() => _saving.remove(examStudentId));
-        return;
-      }
-
-      debugPrint('📝 About to upload with srNo: "$seatNo"');
-
       // ✅ Get institute ID from subject (fallback to centre_id)
       final instituteId = subject['institute_id']?.toString() ?? subject['centre_id']?.toString() ?? '';
       if (instituteId.isEmpty) {
@@ -136,7 +114,6 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
             const SnackBar(content: Text('Institute ID not found'), backgroundColor: Colors.red),
           );
         }
-        setState(() => _saving.remove(examStudentId));
         return;
       }
 
@@ -155,7 +132,7 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
       final uploadResult = await StorageService.uploadAttendancePhoto(
         instituteId: instituteId,
         folderYear: DateTime.now().year.toString(),
-        srNo: seatNo,
+        srNo: subject['seat_no']?.toString() ?? '',
         subject: subjectName,  // ✅ Fixed variable name
         date: (timestamp ?? DateTime.now()).toIso8601String().split('T').first,
         photoBytes: photoBytes,
@@ -164,7 +141,54 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
 
       final photoUrl = uploadResult['url'] ?? photo.path;
 
-      debugPrint('✅ Seat verified from database: $seatNo');
+      // ✅ VERIFY: Check if seat number matches before saving
+      final seatNo = subject['seat_no']?.toString() ?? '';
+      if (seatNo.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Seat number not found - cannot verify'),
+              backgroundColor: AppTheme.accentRed,
+            ),
+          );
+        }
+        return;
+      }
+
+      // ✅ Verify seat number from database
+      final examStudents = await supabase
+          .from('exam_students')
+          .select('id, seat_no, exam_student_id')
+          .eq('id', examStudentId);
+
+      if (examStudents.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Student subject record not found'),
+              backgroundColor: AppTheme.accentRed,
+            ),
+          );
+        }
+        return;
+      }
+
+      // ✅ Check if seat number matches
+      final dbSeatNo = examStudents[0]['seat_no']?.toString() ?? '';
+      if (dbSeatNo != seatNo) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Seat mismatch! Expected: $dbSeatNo, Got: $seatNo'),
+              backgroundColor: AppTheme.accentRed,
+            ),
+          );
+        }
+        debugPrint('❌ SEAT MISMATCH: Expected $dbSeatNo but got $seatNo');
+        return;
+      }
+
+      debugPrint('✅ Seat verified: $seatNo matches database');
 
       // ✅ CONSISTENT: Update using subject_name + exam_student_id (SAME as HomeScreen)
       // This ensures both flows save to the exact same row
