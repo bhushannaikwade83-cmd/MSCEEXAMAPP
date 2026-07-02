@@ -33,6 +33,9 @@ class ExamEntryService {
     bool examStrictEntry = true,
     Set<String>? rosterStudentIds,
     bool pipelineVerified = false,
+    double? latitude,
+    double? longitude,
+    DateTime? entryTimestamp,
   }) async {
     if (!isSupabaseConfigured) {
       return const ExamEntryResult.fail('Backend not configured');
@@ -88,8 +91,11 @@ class ExamEntryService {
         studentId: studentId,
         photoPath: photoPath,
         score: score,
+        latitude: latitude,
+        longitude: longitude,
+        entryTimestamp: entryTimestamp,
       );
-      if (kDebugMode) debugPrint('✅ Exam entry saved for student $studentId');
+      if (kDebugMode) debugPrint('✅ Exam entry saved for student $studentId with location ($latitude, $longitude)');
       return ExamEntryResult.success(score: score);
     } catch (e) {
       if (kDebugMode) debugPrint('❌ Exam entry save failed: $e');
@@ -97,7 +103,7 @@ class ExamEntryService {
     }
   }
 
-  /// Save / update a per-subject entry mark.
+  /// Save / update a per-subject entry mark with LOCATION DATA.
   ///
   /// [subjectCode] is optional. When supplied the upsert is keyed on
   /// (center_id, exam_msce_student_id, subject_code) so each subject gets its
@@ -109,6 +115,10 @@ class ExamEntryService {
     required String studentId,
     required String photoPath,
     required String subjectCode,
+    double? latitude,
+    double? longitude,
+    DateTime? entryTimestamp,
+    String? seatNo,  // ✅ For verification
   }) async {
     if (!isSupabaseConfigured) {
       return const ExamEntryResult.fail('Backend not configured');
@@ -120,6 +130,10 @@ class ExamEntryService {
         photoPath: photoPath,
         score: null,
         subjectCode: subjectCode,
+        latitude: latitude,
+        longitude: longitude,
+        entryTimestamp: entryTimestamp,
+        seatNo: seatNo,
       );
       return const ExamEntryResult.success();
     } catch (e) {
@@ -161,39 +175,47 @@ class ExamEntryService {
     required String photoPath,
     required double? score,
     String? subjectCode,
+    double? latitude,
+    double? longitude,
+    DateTime? entryTimestamp,
+    String? seatNo,
   }) async {
+    // ✅ Save directly to exam_students table with location data
+    final now = DateTime.now();
+
+    // ✅ Indian timezone (IST = UTC+5:30) - NO UTC conversion
+    final entryTime = entryTimestamp ?? now;
+    final photoTime = now;
+
     final payload = <String, dynamic>{
-      'center_id': centerId,
-      'exam_msce_student_id': studentId,
-      'marked_at': DateTime.now().toUtc().toIso8601String(),
-      'staff_confirmed': false,
-      'present_photo_path': photoPath,
-      'exam_entry_photo_url': photoPath,
-      'exam_face_match_score': score,
-      if (subjectCode != null && subjectCode.isNotEmpty) 'subject_code': subjectCode,
+      'entry_photo_url': photoPath,  // ✅ Photo URL
+      'entry_at': entryTime.toIso8601String(),  // ✅ Entry time in IST (local time, NOT UTC)
+      'entry_photo_at': photoTime.toIso8601String(),  // ✅ Photo capture time in IST
+      'entry_latitude': latitude,  // ✅ Latitude
+      'entry_longitude': longitude,  // ✅ Longitude
+      'is_enabled': true,
+      if (seatNo != null && seatNo.isNotEmpty) 'seat_no': seatNo,  // ✅ Seat number
     };
 
-    var query = supabase
-        .from('exam_attendance_marks')
-        .select('id')
-        .eq('center_id', centerId)
-        .eq('exam_msce_student_id', studentId);
-
+    // ✅ UPDATE: Use subject_name (not subject_code) + exam_student_id for matching
+    // This matches ALL exam_students rows for this student + subject_name combination
     if (subjectCode != null && subjectCode.isNotEmpty) {
-      query = query.eq('subject_code', subjectCode);
-    }
-
-    final existing = await query.maybeSingle();
-
-    if (existing != null) {
       await supabase
-          .from('exam_attendance_marks')
+          .from('exam_students')
           .update(payload)
-          .eq('id', existing['id'] as String);
-      return;
-    }
+          .eq('exam_student_id', studentId)
+          .eq('subject_name', subjectCode);
 
-    await supabase.from('exam_attendance_marks').insert(payload);
+      if (kDebugMode) {
+        debugPrint('✅ HomeScreen saved: student=$studentId, subject=$subjectCode, photo=$photoPath, lat=$latitude, lng=$longitude');
+      }
+    } else {
+      // Fallback: Update all subjects for this student if no subject specified
+      await supabase
+          .from('exam_students')
+          .update(payload)
+          .eq('exam_student_id', studentId);
+    }
   }
 
   String _friendlySaveError(Object e) {

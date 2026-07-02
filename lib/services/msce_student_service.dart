@@ -214,13 +214,39 @@ class MsceStudentService {
     for (var i = 0; i < matched.length; i++) {
       final id = matched[i].id;
       final signedUrl = signedById[id]?['face_photo_url']?.toString() ?? matched[i].photoUrl;
+
+      // Auto-assign SR No based on sorted position (001, 002, 003, ...)
+      final autoSrNo = (i + 1).toString().padLeft(3, '0');
+
       if (signedUrl != matched[i].photoUrl) {
         matched[i] = MsceStudent(
           id: matched[i].id,
           name: matched[i].name,
           lastName: matched[i].lastName,
-          srNo: matched[i].srNo,
+          srNo: autoSrNo, // Use auto-numbered SR No
           photoUrl: signedUrl,
+          photoVersion: matched[i].photoVersion,
+          hasFaceEmbedding: matched[i].hasFaceEmbedding,
+          instituteId: matched[i].instituteId,
+          userId: matched[i].userId,
+          firstName: matched[i].firstName,
+          middleName: matched[i].middleName,
+          year: matched[i].year,
+          subject: matched[i].subject,
+          examRollNumber: matched[i].examRollNumber,
+          entryMarked: matched[i].entryMarked,
+          entryPhotoUrl: matched[i].entryPhotoUrl,
+          entryMarkedAt: matched[i].entryMarkedAt,
+          faceMatchScore: matched[i].faceMatchScore,
+        );
+      } else {
+        // Update srNo even if photoUrl didn't change
+        matched[i] = MsceStudent(
+          id: matched[i].id,
+          name: matched[i].name,
+          lastName: matched[i].lastName,
+          srNo: autoSrNo,
+          photoUrl: matched[i].photoUrl,
           photoVersion: matched[i].photoVersion,
           hasFaceEmbedding: matched[i].hasFaceEmbedding,
           instituteId: matched[i].instituteId,
@@ -259,21 +285,36 @@ class MsceStudentService {
     required String centerCode,
     String? instituteId,
   }) async {
-    var query = supabase
-        .from('students')
-        .select(_detailCols)
-        .eq('exam_centre_code', centerCode);
+    // Load from exam_students table (same as QR scan)
+    final examStudentsRows = await supabase
+        .from('exam_students')
+        .select('exam_student_id, student_name, seat_no, photo_url, subject_name, centre_code')
+        .eq('centre_code', centerCode)
+        .order('student_name');
 
-    final inst = instituteId?.trim() ?? '';
-    if (inst.isNotEmpty) {
-      query = query.eq('institute_id', inst);
+    // Group by student to get unique students
+    final Map<String, Map<String, dynamic>> studentMap = {};
+
+    for (final row in examStudentsRows as List) {
+      final studentId = row['exam_student_id']?.toString() ?? '';
+      final studentName = row['student_name']?.toString() ?? '';
+      final photoUrl = row['photo_url']?.toString();
+
+      if (studentId.isEmpty || studentName.isEmpty) continue;
+
+      if (!studentMap.containsKey(studentId)) {
+        studentMap[studentId] = {
+          'id': studentId,
+          'name': studentName,
+          'face_photo_url': photoUrl,
+          'photo_version': '0',
+          'institute_id': instituteId ?? '',
+          'exam_centre_code': centerCode,
+        };
+      }
     }
 
-    final rows = await query.order('name');
-    return [
-      for (final raw in rows as List)
-        Map<String, dynamic>.from(raw as Map),
-    ];
+    return studentMap.values.toList();
   }
 
   Future<void> _signPhotoUrls(List<Map<String, dynamic>> rows) async {
@@ -470,29 +511,58 @@ class MsceStudentService {
       if (search.isNotEmpty) {
         query = query.ilike('student_name', '%${search.trim()}%');
       }
-      final rows = await query;
+
+      // ✅ Order by seat_no for consistent data (photo linked to seat_no)
+      final rows = await query.order('seat_no', ascending: true);
       print('📊 DEBUG: Got ${rows.length} exam_students rows');
 
-      // Group ALL subjects by exam_student_id
+      // ✅ Group ALL subjects by STUDENT NAME (not exam_student_id - same student may have different IDs per subject)
       final studentMap = <String, List<Map<String, dynamic>>>{};
+      final studentIdMap = <String, String>{};  // Map to store first exam_student_id for each student
+
+      // ✅ Log seat-photo mapping for debugging
+      final photoDebug = <String, String>{};
+
       for (final raw in rows as List) {
         final row = Map<String, dynamic>.from(raw as Map);
+        final studentName = row['student_name']?.toString() ?? '';
         final examStudentId = row['exam_student_id']?.toString() ?? '';
-        if (examStudentId.isNotEmpty) {
-          studentMap.putIfAbsent(examStudentId, () => []).add(row);
+        final seatNo = row['seat_no']?.toString() ?? '';
+        final photoUrl = row['entry_photo_url']?.toString() ?? '';
+
+        if (photoUrl.isNotEmpty) {
+          photoDebug[seatNo] = photoUrl;
         }
+
+        if (studentName.isNotEmpty) {
+          studentMap.putIfAbsent(studentName, () => []).add(row);
+          // Store first exam_student_id for this student
+          if (!studentIdMap.containsKey(studentName)) {
+            studentIdMap[studentName] = examStudentId;
+          }
+        }
+      }
+
+      if (photoDebug.isNotEmpty) {
+        print('✅ Photos by seat: $photoDebug');
       }
 
       // Create MsceStudent objects with ALL subjects
       final students = <MsceStudent>[];
-      for (final examStudentId in studentMap.keys) {
-        final subjectRows = studentMap[examStudentId]!;
+      for (final studentName in studentMap.keys) {
+        final subjectRows = studentMap[studentName]!;
         final firstRow = subjectRows.first;  // Use first row for student info
+        final examStudentId = studentIdMap[studentName] ?? '';
+
+        // Parse surname from student_name for sorting
+        final fullName = firstRow['student_name']?.toString() ?? 'Unknown';
+        final nameParts = fullName.trim().split(RegExp(r'\s+'));
+        final lastName = nameParts.length > 1 ? nameParts.last : '';
 
         students.add(MsceStudent(
           id: examStudentId,
-          name: firstRow['student_name']?.toString() ?? 'Unknown',
-          lastName: '',
+          name: fullName,
+          lastName: lastName,  // ✅ Extract surname for sorting
           srNo: firstRow['sr_no']?.toString() ?? '',
           photoUrl: firstRow['photo_url']?.toString() ?? '',
           hasFaceEmbedding: firstRow['face_embedding'] != null,
@@ -518,7 +588,65 @@ class MsceStudentService {
         ));
       }
 
-      print('✅ DEBUG: Returning ${students.length} unique students');
+      // Fetch student photos from students table (master source)
+      final studentIds = students.map((s) => s.id).toList();
+      final photoMap = <String, String>{};
+      if (studentIds.isNotEmpty) {
+        try {
+          final studentRows = await supabase
+              .from('students')
+              .select('id, face_photo_url')
+              .inFilter('id', studentIds);
+          for (final row in studentRows as List) {
+            final id = row['id']?.toString() ?? '';
+            final photoUrl = row['face_photo_url']?.toString();
+            if (id.isNotEmpty && photoUrl != null && photoUrl.isNotEmpty) {
+              photoMap[id] = photoUrl;
+            }
+          }
+          print('📸 Fetched photos for ${photoMap.length} students from students table');
+        } catch (e) {
+          print('⚠️ Could not fetch photos from students table: $e');
+        }
+      }
+
+      // Sort by surname (ascending), then by name
+      students.sort((a, b) {
+        final lc = a.lastName.toLowerCase().compareTo(b.lastName.toLowerCase());
+        if (lc != 0) return lc;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+      // Auto-assign SR No based on sorted position (001, 002, 003, ...)
+      for (var i = 0; i < students.length; i++) {
+        final autoSrNo = (i + 1).toString().padLeft(3, '0');
+        // Use photo from students table if available, fallback to exam_students
+        final finalPhotoUrl = photoMap[students[i].id] ?? students[i].photoUrl;
+
+        students[i] = MsceStudent(
+          id: students[i].id,
+          name: students[i].name,
+          lastName: students[i].lastName,
+          srNo: autoSrNo,  // ✅ Use auto-numbered SR No
+          photoUrl: finalPhotoUrl,  // ✅ Use photo from students table
+          photoVersion: students[i].photoVersion,
+          hasFaceEmbedding: students[i].hasFaceEmbedding,
+          instituteId: students[i].instituteId,
+          userId: students[i].userId,
+          firstName: students[i].firstName,
+          middleName: students[i].middleName,
+          year: students[i].year,
+          subject: students[i].subject,
+          examRollNumber: students[i].examRollNumber,
+          entryMarked: students[i].entryMarked,
+          entryPhotoUrl: students[i].entryPhotoUrl,
+          entryMarkedAt: students[i].entryMarkedAt,
+          faceMatchScore: students[i].faceMatchScore,
+          subjects: students[i].subjects,
+        );
+      }
+
+      print('✅ DEBUG: Returning ${students.length} unique students (sorted by surname, auto-numbered)');
       return students;
     } catch (e) {
       print('❌ DEBUG ERROR: $e');

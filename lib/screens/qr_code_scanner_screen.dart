@@ -172,10 +172,10 @@ class _QrCodeScannerScreenState extends State<QrCodeScannerScreen> {
     final studentName = firstRow['student_name']?.toString() ?? 'Unknown';
     final photoUrl = firstRow['photo_url']?.toString() ?? '';
 
-    // Fetch all subjects for this student
+    // ✅ Fetch all subject names for display (StudentSubjectsScreen will load full details)
     final subjectsQuery = supabase
         .from('exam_students')
-        .select('subject_code, subject_name, seat_no, exam_date, start_time, end_time, batch')
+        .select('subject_name')
         .eq('exam_student_id', firstRow['exam_student_id']?.toString() ?? '')
         .eq('centre_code', _centerCode!);
 
@@ -184,20 +184,20 @@ class _QrCodeScannerScreenState extends State<QrCodeScannerScreen> {
 
     for (final raw in subjectRows as List) {
       final row = Map<String, dynamic>.from(raw as Map);
-      final subjectCode = row['subject_code']?.toString() ?? '';
-      if (subjectCode.isNotEmpty && !subjects.contains(subjectCode)) {
-        subjects.add(subjectCode);
+      final subjectName = row['subject_name']?.toString() ?? '';
+      if (subjectName.isNotEmpty && !subjects.contains(subjectName)) {
+        subjects.add(subjectName);
       }
     }
 
-    // Create ExamStudent object
+    // ✅ Create ExamStudent object - StudentSubjectsScreen will load full exam_students rows
     return ExamStudent(
       id: firstRow['exam_student_id']?.toString() ?? '',
       rollNumber: firstRow['seat_no']?.toString() ?? '',
       name: studentName,
       examTime: DateTime.now(),
       passportPhotoUrl: photoUrl.isNotEmpty ? photoUrl : null,
-      subjects: subjects,
+      subjects: subjects,  // ✅ Just subject names
       isMarked: false,
     );
   }

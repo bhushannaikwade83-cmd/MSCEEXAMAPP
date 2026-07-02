@@ -4,7 +4,9 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../core/theme/app_ui.dart';
 import '../services/pin_service.dart';
+import '../services/session_service.dart';
 import '../services/post_login_navigator.dart';
+import 'home_screen.dart';
 
 class PinSetupScreen extends StatefulWidget {
   const PinSetupScreen({
@@ -98,7 +100,15 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
     if (_saving) return;
     setState(() => _saving = true);
     try {
+      // ✅ Save to PinService (center-specific)
       await PinService.savePin(centerId: widget.centerId, pin: pin);
+
+      // ✅ Also save to SessionService (device-local for quick login)
+      await SessionService.savePin(pin);
+
+      // ✅ Save session date (marks login for today)
+      await SessionService.saveSessionDate();
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -116,7 +126,13 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       );
       await Future.delayed(const Duration(milliseconds: 500));
       if (!mounted) return;
-      await PostLoginNavigator.continueSetup(context, centerId: widget.centerId);
+
+      // ✅ Go directly to HomeScreen (bypass continueSetup which would redirect to PIN login)
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (_) => false,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {

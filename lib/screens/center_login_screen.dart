@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,8 @@ import '../core/utils/responsive.dart';
 import '../services/auth_service.dart';
 import '../services/post_login_navigator.dart';
 import '../services/session_service.dart';
+import '../services/location_service.dart';
+import 'pin_login_screen.dart';
 
 class CenterLoginScreen extends StatefulWidget {
   const CenterLoginScreen({super.key});
@@ -105,6 +108,14 @@ class _CenterLoginScreenState extends State<CenterLoginScreen>
     if (_busy) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
+    // Check location permission first
+    final hasLocationAccess = await LocationService.requestLocationPermission();
+    if (!hasLocationAccess) {
+      if (!mounted) return;
+      _showSnackbar('📍 Location access required - Please enable in Settings', success: false);
+      return;
+    }
+
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
 
@@ -124,6 +135,19 @@ class _CenterLoginScreenState extends State<CenterLoginScreen>
       centerName: result.name ?? '',
       msceInstituteId: result.msceInstituteId,
     );
+
+    // ✅ Save location in background (no UI feedback)
+    final location = await LocationService.getCurrentLocation();
+    if (location != null) {
+      unawaited(
+        LocationService.saveLoginLocation(
+          centreId: result.centerId!,
+          centreCode: result.code ?? '',
+          latitude: location['latitude']!,
+          longitude: location['longitude']!,
+        ),
+      );
+    }
 
     if (!mounted) return;
     setState(() => _busy = false);

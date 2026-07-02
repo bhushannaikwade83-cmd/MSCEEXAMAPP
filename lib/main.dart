@@ -10,8 +10,11 @@ import 'core/supabase_client.dart';
 import 'core/theme/app_ui.dart';
 import 'core/utils/responsive.dart';
 import 'screens/center_login_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/pin_login_screen.dart';
 import 'services/device_performance_service.dart';
 import 'services/face_recognition_service.dart';
+import 'services/pin_service.dart';
 import 'services/post_login_navigator.dart';
 import 'services/session_service.dart';
 
@@ -79,18 +82,54 @@ class _BootstrapState extends State<_Bootstrap> {
 
   Future<void> _route() async {
     final center = await SessionService.getCenter();
+    final pin = await SessionService.getPin();
+    final sessionValid = await SessionService.isSessionValid();
     if (!mounted) return;
 
-    if (center == null) {
+    // ✅ Logic:
+    // 1. PIN + session valid → go to HomeScreen (already logged in today)
+    // 2. PIN + session expired → go to PIN login (re-authenticate)
+    // 3. Centre but no PIN → go to continueSetup (PIN setup)
+    // 4. No centre → go to centre login (first time)
+
+    // ✅ PIN exists and session is still valid today
+    if (pin != null && pin.isNotEmpty && sessionValid) {
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
+      }
+      return;
+    }
+
+    // ✅ PIN exists but session expired → go to PIN login
+    if (pin != null && pin.isNotEmpty) {
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const PinLoginScreen()),
+        );
+      }
+      return;
+    }
+
+    // ✅ No PIN - if centre exists, continue setup (show PIN setup)
+    if (center != null) {
+      // Don't await, let it handle routing
+      if (mounted) {
+        await PostLoginNavigator.continueSetup(context, centerId: center['id']!);
+      }
+      return;
+    }
+
+    // ✅ No centre and no PIN - go to centre login (first time)
+    if (mounted) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const CenterLoginScreen()),
       );
-      return;
     }
-
-    if (!mounted) return;
-    await PostLoginNavigator.continueSetup(context, centerId: center['id']!);
   }
 
   @override
