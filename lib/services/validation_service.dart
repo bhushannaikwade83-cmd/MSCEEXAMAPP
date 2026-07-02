@@ -8,7 +8,7 @@ class ValidationService {
   // Phone validation regex (Indian format)
   static final RegExp _phoneRegex = RegExp(r'^[6-9]\d{9}$');
 
-  // Roll number validation (alphanumeric, max 20 chars)
+  // Roll number validation (numeric or alphanumeric with hyphens/underscores, max 20 chars)
   static final RegExp _rollNumberRegex = RegExp(r'^[A-Za-z0-9_-]{1,20}$');
 
   // Name validation (letters, spaces, dots, max 100 chars)

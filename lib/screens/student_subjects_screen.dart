@@ -106,13 +106,33 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
     setState(() => _saving.add(examStudentId));
 
     try {
-      // ✅ FIRST: Validate seat_no before doing anything
-      final seatNo = subject['seat_no']?.toString() ?? '';
+      // ✅ FIRST: Get seat_no from database (most reliable source)
+      // Don't rely on subject record as it may be incomplete
+      final examStudentRecord = await supabase
+          .from('exam_students')
+          .select('seat_no')
+          .eq('id', examStudentId)
+          .maybeSingle();
+
+      if (examStudentRecord == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Student subject record not found'),
+              backgroundColor: AppTheme.accentRed,
+            ),
+          );
+        }
+        setState(() => _saving.remove(examStudentId));
+        return;
+      }
+
+      final seatNo = examStudentRecord['seat_no']?.toString() ?? '';
       if (seatNo.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('❌ Seat number not found - cannot mark attendance'),
+              content: Text('❌ Seat number not found in database'),
               backgroundColor: AppTheme.accentRed,
             ),
           );
@@ -157,40 +177,7 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
 
       final photoUrl = uploadResult['url'] ?? photo.path;
 
-      // ✅ Verify seat number from database
-      final examStudents = await supabase
-          .from('exam_students')
-          .select('id, seat_no, exam_student_id')
-          .eq('id', examStudentId);
-
-      if (examStudents.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ Student subject record not found'),
-              backgroundColor: AppTheme.accentRed,
-            ),
-          );
-        }
-        return;
-      }
-
-      // ✅ Check if seat number matches
-      final dbSeatNo = examStudents[0]['seat_no']?.toString() ?? '';
-      if (dbSeatNo != seatNo) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Seat mismatch! Expected: $dbSeatNo, Got: $seatNo'),
-              backgroundColor: AppTheme.accentRed,
-            ),
-          );
-        }
-        debugPrint('❌ SEAT MISMATCH: Expected $dbSeatNo but got $seatNo');
-        return;
-      }
-
-      debugPrint('✅ Seat verified: $seatNo matches database');
+      debugPrint('✅ Seat verified from database: $seatNo');
 
       // ✅ CONSISTENT: Update using subject_name + exam_student_id (SAME as HomeScreen)
       // This ensures both flows save to the exact same row
