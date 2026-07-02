@@ -588,27 +588,22 @@ class MsceStudentService {
         ));
       }
 
-      // Fetch student photos from students table (master source)
-      final studentIds = students.map((s) => s.id).toList();
+      // Fetch thumbnail photos from exam_students.photo_url column (registration photos)
+      // Photos are already in student.subjects rows, extract them
       final photoMap = <String, String>{};
-      if (studentIds.isNotEmpty) {
-        try {
-          final studentRows = await supabase
-              .from('students')
-              .select('id, face_photo_url')
-              .inFilter('id', studentIds);
-          for (final row in studentRows as List) {
-            final id = row['id']?.toString() ?? '';
-            final photoUrl = row['face_photo_url']?.toString();
-            if (id.isNotEmpty && photoUrl != null && photoUrl.isNotEmpty) {
-              photoMap[id] = photoUrl;
+      for (final student in students) {
+        for (final subjectRow in student.subjects) {
+          final photoUrl = subjectRow['photo_url']?.toString();  // ✅ Thumbnail from exam_students
+          if (photoUrl != null && photoUrl.isNotEmpty) {
+            // Use first photo_url found for this student
+            if (!photoMap.containsKey(student.id)) {
+              photoMap[student.id] = photoUrl;
             }
+            break;
           }
-          print('📸 Fetched photos for ${photoMap.length} students from students table');
-        } catch (e) {
-          print('⚠️ Could not fetch photos from students table: $e');
         }
       }
+      print('📸 Fetched thumbnail photos for ${photoMap.length} students from exam_students.photo_url');
 
       // Sort by surname (ascending), then by name
       students.sort((a, b) {
