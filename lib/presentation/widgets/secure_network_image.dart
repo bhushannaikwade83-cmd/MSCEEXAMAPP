@@ -143,13 +143,22 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
   }
 
   Future<void> _loadPhotoUrl() async {
-    // Use the automatic temporary URL generation method
-    // This handles all cases: storagePath, photoUrl (signed/unsigned), etc.
+    // ✅ For proxy URLs (/api/b2-upload?key=...), use directly (no API call needed)
+    // For other URLs, generate temporary signed URL via API
     try {
-      final urlToUse = await StorageService.getTemporaryPhotoUrl(
-        photoUrl: widget.imageUrl,
-        storagePath: widget.storagePath,
-      );
+      String? urlToUse;
+
+      // Priority 1: Proxy URLs (already valid, never expire)
+      if (widget.imageUrl != null && widget.imageUrl!.startsWith('/api/b2-upload')) {
+        urlToUse = widget.imageUrl; // Use proxy URL directly ✅
+      }
+      // Priority 2: Generate temporary URL for storage paths or unsigned URLs
+      else {
+        urlToUse = await StorageService.getTemporaryPhotoUrl(
+          photoUrl: widget.imageUrl,
+          storagePath: widget.storagePath,
+        );
+      }
 
       if (mounted) {
         setState(() {

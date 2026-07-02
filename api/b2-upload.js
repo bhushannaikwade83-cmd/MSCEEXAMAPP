@@ -20,14 +20,14 @@ function env(...keys) {
 }
 
 function requireB2Config() {
-  const keyId = env('B2_KEY_ID');
-  const applicationKey = env('B2_MASTER_KEY');
-  const bucketName = env('B2_BUCKET_NAME');
-  const bucketId = env('B2_BUCKET_ID');
+  const keyId = env('B2B_KEY_ID');
+  const applicationKey = env('B2B_APPLICATION_KEY');
+  const bucketName = env('B2B_BUCKET_NAME');
+  const bucketId = env('B2B_BUCKET_ID');
 
   if (!keyId || !applicationKey || !bucketName || !bucketId) {
     throw new Error(
-      'Missing B2 config. Set B2_KEY_ID, B2_MASTER_KEY, B2_BUCKET_NAME, and B2_BUCKET_ID in Vercel environment.'
+      'Missing B2 config. Set B2B_KEY_ID, B2B_APPLICATION_KEY, B2B_BUCKET_NAME, and B2B_BUCKET_ID in Vercel environment.'
     );
   }
   return { keyId, applicationKey, bucketName, bucketId };
