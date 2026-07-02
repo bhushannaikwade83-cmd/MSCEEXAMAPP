@@ -1,4 +1,3 @@
 {
-  "buildCommand": "flutter clean && flutter build web --release",
   "outputDirectory": "build/web"
 }
