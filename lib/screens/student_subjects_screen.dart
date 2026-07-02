@@ -1,11 +1,12 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:convert' show base64Encode;
+import 'dart:convert' show jsonDecode;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 
@@ -145,30 +146,36 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
         return;
       }
 
-      // Upload to B2 via Supabase Edge Function (web-safe)
+      // Upload to B2 via Vercel API
       String photoUrl;
       try {
         final fileName = '${DateTime.now().millisecondsSinceEpoch}_${seatNo}_entry.jpg';
-        final storagePath = 'attendance/${DateTime.now().year}/$seatNo/$fileName';
+        debugPrint('📤 Uploading to B2 via Vercel API: $fileName');
 
-        debugPrint('📤 Uploading to B2 via edge function: $storagePath');
-
-        // Call b2-storage-proxy edge function
-        final result = await supabase.functions.invoke(
-          'b2-storage-proxy',
-          body: {
-            'action': 'uploadFile',
-            'key': storagePath,
-            'file': base64Encode(photoBytes),  // Base64 encode for JSON transmission
-            'contentType': 'image/jpeg',
+        final http_client = http.Client();
+        final uploadResponse = await http_client.post(
+          Uri.parse('https://msceexamapp.vercel.app/api/b2-upload'),
+          headers: {
+            'X-File-Name': fileName,
+            'Content-Type': 'image/jpeg',
           },
-        );
+          body: photoBytes,
+        ).timeout(const Duration(seconds: 60));
 
-        if (result.data is! Map || result.data['success'] != true) {
-          throw Exception('Edge function upload failed: ${result.data}');
+        if (uploadResponse.statusCode != 200) {
+          throw Exception('API returned ${uploadResponse.statusCode}: ${uploadResponse.body}');
         }
 
-        photoUrl = result.data['publicUrl'] as String;
+        final responseData = jsonDecode(uploadResponse.body) as Map<String, dynamic>;
+        if (responseData['success'] != true) {
+          throw Exception('Upload failed: ${responseData['error']}');
+        }
+
+        photoUrl = responseData['url'] as String? ?? '';
+        if (photoUrl.isEmpty) {
+          throw Exception('No URL returned');
+        }
+
         debugPrint('✅ Upload successful: $photoUrl');
       } catch (e) {
         debugPrint('❌ Upload failed: $e');

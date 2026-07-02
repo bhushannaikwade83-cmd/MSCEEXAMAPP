@@ -1,0 +1,13 @@
+{
+  "buildCommand": "flutter clean && flutter build web --release",
+  "outputDirectory": "build/web",
+  "framework": "flutter",
+  "env": {
+    "B2_KEY_ID": "@b2_key_id",
+    "B2_MASTER_KEY": "@b2_master_key",
+    "B2_BUCKET_NAME": "@b2_bucket_name",
+    "B2_BUCKET_ID": "@b2_bucket_id",
+    "SUPABASE_URL": "@supabase_url",
+    "SUPABASE_ANON_KEY": "@supabase_anon_key"
+  }
+}
