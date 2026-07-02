@@ -176,6 +176,18 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
     }
   }
 
+  /// Route B2 URLs through Supabase edge function proxy for CORS support
+  String _getProxiedUrl(String url) {
+    if (url.contains('backblazeb2.com')) {
+      // Use Supabase edge function proxy to add CORS headers
+      // Edge function: https://supabase-project.functions.supabase.co/b2-proxy?url=<encoded-b2-url>
+      final proxyUrl = 'https://uxitbdvsjjxvwoxlzfxz.supabase.co/functions/v1/b2-proxy?url=${Uri.encodeComponent(url)}';
+      if (kDebugMode) debugPrint('📸 Routing B2 URL through edge function proxy: $url → $proxyUrl');
+      return proxyUrl;
+    }
+    return url;
+  }
+
   /// Web-only: fetch photo bytes and bake EXIF orientation into the pixels.
   ///
   /// Safari (and Chrome on iOS, which uses Safari's engine) decodes images in
@@ -183,6 +195,8 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
   /// physically rotating the pixels once here, the displayed image is
   /// identical and upright on every browser. Results are cached in memory.
   Future<void> _loadWebImageBytes(String url) async {
+    // Route B2 URLs through CORS proxy
+    final urlToFetch = _getProxiedUrl(url);
     final cacheKey = _diskCacheKey ?? url;
 
     final cached = _webBakedCache[cacheKey];
@@ -205,7 +219,7 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
     }
 
     try {
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(Uri.parse(urlToFetch));
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
       }
@@ -405,8 +419,10 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
         );
       }
       if (_webFetchFailed) {
+        // Use proxied URL for fallback <img> element (handles CORS)
+        final proxiedUrl = _getProxiedUrl(_currentUrl!);
         return Image.network(
-          _currentUrl!,
+          proxiedUrl,
           fit: widget.fit,
           width: widget.width,
           height: widget.height,
@@ -414,7 +430,7 @@ class _SecureNetworkImageState extends State<SecureNetworkImage> {
           loadingBuilder: (context, child, progress) =>
               progress == null ? child : _buildPlaceholder(),
           errorBuilder: (context, error, stackTrace) {
-            if (kDebugMode) debugPrint('❌ Web image load failed: $error');
+            if (kDebugMode) debugPrint('❌ Web image load failed (via proxy): $error');
             return _buildErrorWidget();
           },
         );
