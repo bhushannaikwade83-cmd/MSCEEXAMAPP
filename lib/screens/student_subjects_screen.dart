@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:convert' show base64Encode;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
@@ -129,19 +130,7 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
         debugPrint('📸 Compressed photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
       }
 
-      final uploadResult = await StorageService.uploadAttendancePhoto(
-        instituteId: instituteId,
-        folderYear: DateTime.now().year.toString(),
-        srNo: subject['seat_no']?.toString() ?? '',
-        subject: subjectName,  // ✅ Fixed variable name
-        date: (timestamp ?? DateTime.now()).toIso8601String().split('T').first,
-        photoBytes: photoBytes,
-        photoType: 'entry',
-      );
-
-      final photoUrl = uploadResult['url'] ?? photo.path;
-
-      // ✅ VERIFY: Check if seat number matches before saving
+      // ✅ Get seat_no FIRST (needed for upload path)
       final seatNo = subject['seat_no']?.toString() ?? '';
       if (seatNo.isEmpty) {
         if (mounted) {
@@ -152,6 +141,46 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
             ),
           );
         }
+        setState(() => _saving.remove(examStudentId));
+        return;
+      }
+
+      // Upload to B2 via Supabase Edge Function (web-safe)
+      String photoUrl;
+      try {
+        final fileName = '${DateTime.now().millisecondsSinceEpoch}_${seatNo}_entry.jpg';
+        final storagePath = 'attendance/${DateTime.now().year}/$seatNo/$fileName';
+
+        debugPrint('📤 Uploading to B2 via edge function: $storagePath');
+
+        // Call b2-storage-proxy edge function
+        final result = await supabase.functions.invoke(
+          'b2-storage-proxy',
+          body: {
+            'action': 'uploadFile',
+            'key': storagePath,
+            'file': base64Encode(photoBytes),  // Base64 encode for JSON transmission
+            'contentType': 'image/jpeg',
+          },
+        );
+
+        if (result.data is! Map || result.data['success'] != true) {
+          throw Exception('Edge function upload failed: ${result.data}');
+        }
+
+        photoUrl = result.data['publicUrl'] as String;
+        debugPrint('✅ Upload successful: $photoUrl');
+      } catch (e) {
+        debugPrint('❌ Upload failed: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Photo upload failed: $e'),
+              backgroundColor: AppTheme.accentRed,
+            ),
+          );
+        }
+        setState(() => _saving.remove(examStudentId));
         return;
       }
 

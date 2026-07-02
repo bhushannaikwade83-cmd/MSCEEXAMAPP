@@ -168,6 +168,9 @@ class B2BStorageService {
 
       final sha1Hash = sha1.convert(fileBytes).toString();
       final encodedPath = Uri.encodeComponent(trimmedPath);
+
+      if (kDebugMode) debugPrint('📤 Uploading to B2: $uploadUrl');
+
       final uploadResponse = await http.post(
         Uri.parse(uploadUrl),
         headers: {
@@ -178,11 +181,17 @@ class B2BStorageService {
           'X-Bz-Content-Sha1': sha1Hash,
         },
         body: fileBytes,
+      ).timeout(
+        const Duration(seconds: 60),
+        onTimeout: () => throw Exception('B2 upload timeout (60s)'),
       );
 
       if (uploadResponse.statusCode != 200) {
+        if (kDebugMode) debugPrint('❌ B2 upload error: ${uploadResponse.statusCode}');
         throw Exception('Upload failed: ${uploadResponse.statusCode} ${uploadResponse.body}');
       }
+
+      if (kDebugMode) debugPrint('✅ B2 upload success');
 
       return '$downloadUrl/file/$edgeBucketName/$encodedPath';
     } catch (e) {
