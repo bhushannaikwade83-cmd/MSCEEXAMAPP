@@ -102,35 +102,30 @@ export default async function handler(req, res) {
         const key = decodeURIComponent(String(keyParam));
         console.log(`📥 Proxying download: ${key}`);
 
-        const { bucketName, bucketId } = requireB2Config();
-        const auth = await b2AuthorizeAccount();
+        const { bucketName } = requireB2Config();
 
-        // Get download authorization
-        const authToken = await b2ApiPost(auth.apiUrl, 'b2_get_download_authorization', auth.authorizationToken, {
-          bucketId,
-          fileNamePrefix: key,
-          validDurationInSeconds: 3600,
-        });
+        // ✅ Direct B2 URL - no authorization needed for public buckets
+        // Format: https://f004.backblazeb2.com/file/bucket-name/file-path
+        const b2FileUrl = `https://f004.backblazeb2.com/file/${bucketName}/${key}`;
+        console.log(`📍 B2 URL: ${b2FileUrl}`);
 
-        // Proxy the download
-        const encodedKey = key.split('/').map(encodeURIComponent).join('/');
-        const downloadUrl = `${auth.downloadUrl}/file/${encodeURIComponent(bucketName)}/${encodedKey}`;
-
-        const response = await fetch(downloadUrl, {
+        const response = await fetch(b2FileUrl, {
           method: req.method,
-          headers: {
-            Authorization: authToken.authorizationToken,
-          },
         });
 
         if (!response.ok) {
-          console.error(`❌ B2 download failed: ${response.status}`);
+          console.error(`❌ B2 download failed: ${response.status} ${response.statusText}`);
+          const errorText = await response.text();
+          console.error(`❌ Error response: ${errorText.substring(0, 200)}`);
           return res.status(response.status).send('Download failed');
         }
 
         // Copy headers
         const contentType = response.headers.get('content-type');
-        if (contentType) res.setHeader('Content-Type', contentType);
+        if (contentType) {
+          res.setHeader('Content-Type', contentType);
+          console.log(`✅ Content-Type: ${contentType}`);
+        }
         const contentLength = response.headers.get('content-length');
         if (contentLength) res.setHeader('Content-Length', contentLength);
 
@@ -139,8 +134,9 @@ export default async function handler(req, res) {
           return;
         }
 
-        // Stream the file
+        // ✅ Stream the file
         const buffer = await response.arrayBuffer();
+        console.log(`✅ Downloaded ${buffer.byteLength} bytes`);
         return res.status(200).send(Buffer.from(buffer));
       } catch (error) {
         console.error('❌ Download error:', error.message);

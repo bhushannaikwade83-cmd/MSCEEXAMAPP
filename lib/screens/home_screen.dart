@@ -254,17 +254,17 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ✅ MSCE Logo Badge
+              // ✅ MSCE Logo Badge - Shows actual logo image
               Container(
-                height: 45.h,
-                width: 45.w,
+                height: 50.h,
+                width: 50.w,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 4,
+                      blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
                   ],
@@ -272,15 +272,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: ClipOval(
                   child: Image.asset(
                     'assets/msce_attendance_app_logo.png',
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) {
-                      return Center(
-                        child: Text(
-                          'M',
-                          style: TextStyle(
-                            color: AppTheme.primaryBlue,
-                            fontSize: 20.sp,
-                            fontWeight: FontWeight.w900,
+                    fit: BoxFit.contain,
+                    scale: 1.0,
+                    errorBuilder: (context, error, stackTrace) {
+                      print('❌ Logo image failed to load: $error');
+                      // Fallback: Show MSCE text if image not found
+                      return Container(
+                        color: Colors.white,
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'MSCE',
+                                style: TextStyle(
+                                  color: AppTheme.primaryBlue,
+                                  fontSize: 8.sp,
+                                  fontWeight: FontWeight.w900,
+                                  height: 0.9,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
                           ),
                         ),
                       );
@@ -790,68 +803,72 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (_) {
             final canTap = !isMarked && (isEnabled || dbIsEnabled);
             return SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: Opacity(
-            opacity: canTap ? 1.0 : 0.6,
-            child: ElevatedButton.icon(
-              onPressed: canTap
-                  ? () async {
-                      // ✅ Open camera for this subject
-                      final subjectCode = subject['subject_name']?.toString() ??
-                                        subject['subject_code']?.toString() ?? 'Unknown';
-                      final result = await Navigator.push<Map<String, dynamic>>(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ExamSubjectCameraScreen(
-                            studentName: s.name,
-                            subjectName: subjectCode,
-                          ),
-                        ),
-                      );
+              width: double.infinity,
+              height: 56,
+              child: Opacity(
+                opacity: canTap ? 1.0 : 0.6,
+                child: ElevatedButton.icon(
+                  onPressed: canTap
+                      ? () async {
+                          // ✅ Open camera for this subject
+                          final subjectCode = subject['subject_name']?.toString() ??
+                                            subject['subject_code']?.toString() ?? 'Unknown';
+                          final result = await Navigator.push<Map<String, dynamic>>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ExamSubjectCameraScreen(
+                                studentName: s.name,
+                                subjectName: subjectCode,
+                              ),
+                            ),
+                          );
 
-                      if (result != null && mounted) {
-                        // ✅ Handle photo with location and timestamp
-                        final photo = result['photo'] as XFile;
-                        final latitude = result['latitude'] as double?;
-                        final longitude = result['longitude'] as double?;
-                        final timestamp = result['timestamp'] as DateTime?;
+                          if (result != null && mounted) {
+                            // ✅ Handle photo with location and timestamp
+                            final photo = result['photo'] as XFile;
+                            final latitude = result['latitude'] as double?;
+                            final longitude = result['longitude'] as double?;
+                            final timestamp = result['timestamp'] as DateTime?;
 
-                        print('📸 Photo captured: ${photo.path}');
-                        print('📍 Location: $latitude, $longitude');
-                        print('⏰ Timestamp: $timestamp');
+                            print('📸 Photo captured: ${photo.path}');
+                            print('📍 Location: $latitude, $longitude');
+                            print('⏰ Timestamp: $timestamp');
 
-                        // ✅ Upload photo to B2 and save entry to database
-                        _saveEntryWithPhoto(
-                          student: s,
-                          subject: subject,
-                          photo: photo,
-                          latitude: latitude,
-                          longitude: longitude,
-                          timestamp: timestamp,
-                        );
-                      }
-                    }
-                  : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isMarked ? AppTheme.primaryGreen : AppTheme.primaryBlue,
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: 12.h),
-                disabledBackgroundColor: AppTheme.primaryGreen,
-              ),
-              icon: Icon(isMarked ? Icons.check_circle : Icons.camera_alt, size: 24),
-              label: Text(
-                isMarked ? 'Marked ✓' : canTap ? 'Entry' : 'Disabled',
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                            // ✅ Upload photo to B2 and save entry to database
+                            _saveEntryWithPhoto(
+                              student: s,
+                              subject: subject,
+                              photo: photo,
+                              latitude: latitude,
+                              longitude: longitude,
+                              timestamp: timestamp,
+                            );
+                          }
+                        }
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isMarked ? AppTheme.primaryGreen : AppTheme.primaryBlue,
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+                    disabledBackgroundColor: AppTheme.primaryGreen,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  icon: Icon(isMarked ? Icons.check_circle : Icons.camera_alt, size: 20),
+                  label: Text(
+                    isMarked ? 'Marked ✓' : (canTap ? 'Entry' : 'Disabled'),
+                    style: TextStyle(
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ),
             );
           },
         ),

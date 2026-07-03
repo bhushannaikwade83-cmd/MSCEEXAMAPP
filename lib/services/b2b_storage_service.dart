@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, debugPrint;
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
@@ -250,18 +250,25 @@ class B2BStorageService {
         throw Exception('No proxy URL returned from upload');
       }
 
-      // ✅ Use direct B2 URL if available (for mobile compatibility), fallback to proxy URL (for web)
-      final urlToStore = directB2Url.isNotEmpty ? directB2Url : proxyUrl;
+      // ✅ Web: Proxy URL (Vercel API) | Mobile: Direct B2 URL
+      final String urlToStore;
+      final bool isWeb = kIsWeb;
+
+      if (isWeb) {
+        urlToStore = proxyUrl;  // ✅ WEB: Proxy URL for Vercel API
+      } else {
+        urlToStore = directB2Url.isNotEmpty ? directB2Url : proxyUrl;  // ✅ MOBILE: Direct B2 URL
+      }
 
       if (kDebugMode) {
-        debugPrint('✅ Upload complete:');
+        debugPrint('✅ Upload complete (Platform: ${isWeb ? 'WEB' : 'MOBILE'}):');
         debugPrint('   Proxy URL (web): $proxyUrl');
         debugPrint('   Direct B2 URL (mobile): $directB2Url');
         debugPrint('   Storing: $urlToStore');
       }
 
       return {
-        'url': urlToStore,  // ✅ Store direct B2 URL for mobile, proxy for web fallback
+        'url': urlToStore,  // ✅ Platform-specific: Proxy for web, Direct B2 for mobile
         'path': storagePath,
         'bucket': bucketName,
         'fileId': fileId,
