@@ -1013,20 +1013,28 @@ class _HomeScreenState extends State<HomeScreen> {
       final photoUrl = uploadResult['url'] ?? photo.path;
       print('✅ Photo uploaded: $photoUrl');
 
-      // ✅ Get seat number for reference (but don't verify - trust the data we already have)
+      // ✅ Get seat number and exam_student_id from subject (each subject has its own ID!)
       final seatNo = subject['seat_no']?.toString() ?? '';
+      final examStudentId = subject['exam_student_id']?.toString() ?? '';
+
+      if (examStudentId.isEmpty) {
+        _snack('❌ Exam student ID not found in subject data', success: false);
+        return;
+      }
+
+      print('🔍 Using exam_student_id from subject: $examStudentId');
 
       // ✅ Save entry to database with location and timestamp
       final entryService = ExamEntryService();
       final result = await entryService.markSubjectEntry(
         centerId: center['id']!,
-        studentId: student.id,
+        studentId: examStudentId,  // ✅ Use SUBJECT's exam_student_id, not student's!
         photoPath: photoUrl,
         subjectCode: subjectCode,
         latitude: latitude,
         longitude: longitude,
         entryTimestamp: timestamp,
-        seatNo: seatNo,  // ✅ Pass verified seat number
+        seatNo: seatNo,
       );
 
       if (!mounted) return;

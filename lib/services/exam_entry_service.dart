@@ -200,21 +200,51 @@ class ExamEntryService {
     // ✅ UPDATE: Use subject_name (not subject_code) + exam_student_id for matching
     // This matches ALL exam_students rows for this student + subject_name combination
     if (subjectCode != null && subjectCode.isNotEmpty) {
-      await supabase
-          .from('exam_students')
-          .update(payload)
-          .eq('exam_student_id', studentId)
-          .eq('subject_name', subjectCode);
-
       if (kDebugMode) {
-        debugPrint('✅ HomeScreen saved: student=$studentId, subject=$subjectCode, photo=$photoPath, lat=$latitude, lng=$longitude');
+        debugPrint('🔍 DEBUG: Querying exam_student_id=$studentId, subject_name=$subjectCode');
+        debugPrint('📝 Payload to update: $payload');
+      }
+
+      try {
+        final response = await supabase
+            .from('exam_students')
+            .update(payload)
+            .eq('exam_student_id', studentId)
+            .eq('subject_name', subjectCode)
+            .select();
+
+        if (kDebugMode) {
+          debugPrint('✅ Update SUCCESS! Rows updated: ${response.length}');
+          debugPrint('✅ Entry saved: student=$studentId, subject=$subjectCode, photo=$photoPath, lat=$latitude, lng=$longitude');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('❌ Update FAILED: $e');
+        }
+        rethrow;
       }
     } else {
       // Fallback: Update all subjects for this student if no subject specified
-      await supabase
-          .from('exam_students')
-          .update(payload)
-          .eq('exam_student_id', studentId);
+      if (kDebugMode) {
+        debugPrint('⚠️ WARNING: No subject code provided - updating ALL subjects for student=$studentId');
+      }
+
+      try {
+        final response = await supabase
+            .from('exam_students')
+            .update(payload)
+            .eq('exam_student_id', studentId)
+            .select();
+
+        if (kDebugMode) {
+          debugPrint('✅ Update all subjects SUCCESS! Rows updated: ${response.length}');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('❌ Update all subjects FAILED: $e');
+        }
+        rethrow;
+      }
     }
   }
 
