@@ -253,11 +253,32 @@ class _HomeScreenState extends State<HomeScreen> {
           // ✅ Logo Row - MSCE Logo at top-left
           Row(
             children: [
-              Image.asset(
-                'assets/msce_attendance_app_logo.png',
-                height: 40.h,
-                width: 40.w,
-                fit: BoxFit.contain,
+              // ✅ MSCE Logo
+              SizedBox(
+                height: 45.h,
+                width: 45.w,
+                child: Image.asset(
+                  'assets/msce_attendance_app_logo.png',
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          'M',
+                          style: TextStyle(
+                            color: AppTheme.primaryBlue,
+                            fontSize: 20.sp,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
               SizedBox(width: 12.w),
               Expanded(
