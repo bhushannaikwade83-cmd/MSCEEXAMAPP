@@ -191,40 +191,7 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
         return;
       }
 
-      // ✅ Verify seat number from database
-      final examStudents = await supabase
-          .from('exam_students')
-          .select('id, seat_no, exam_student_id')
-          .eq('id', examStudentId);
-
-      if (examStudents.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ Student subject record not found'),
-              backgroundColor: AppTheme.accentRed,
-            ),
-          );
-        }
-        return;
-      }
-
-      // ✅ Check if seat number matches
-      final dbSeatNo = examStudents[0]['seat_no']?.toString() ?? '';
-      if (dbSeatNo != seatNo) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Seat mismatch! Expected: $dbSeatNo, Got: $seatNo'),
-              backgroundColor: AppTheme.accentRed,
-            ),
-          );
-        }
-        debugPrint('❌ SEAT MISMATCH: Expected $dbSeatNo but got $seatNo');
-        return;
-      }
-
-      debugPrint('✅ Seat verified: $seatNo matches database');
+      debugPrint('✅ Photo uploaded successfully: $photoUrl');
 
       // ✅ CONSISTENT: Update using subject_name + exam_student_id (SAME as HomeScreen)
       // This ensures both flows save to the exact same row
