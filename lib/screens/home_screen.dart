@@ -246,119 +246,134 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHeader() {
     return Container(
       color: AppTheme.primaryBlueDark,
-      padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 12.h),
+      padding: EdgeInsets.fromLTRB(12.w, 10.h, 12.w, 10.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ✅ Logo Row - MSCE Logo at top-left
+          // ✅ Top Row: Logo + Welcome + Center Info (Responsive)
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ✅ MSCE Logo Badge
               Container(
-                height: 50.h,
-                width: 50.w,
+                height: 45.h,
+                width: 45.w,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 6,
+                      blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
                   ],
                 ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'MSCE',
-                        style: TextStyle(
-                          color: AppTheme.primaryBlue,
-                          fontSize: 10.sp,
-                          fontWeight: FontWeight.w900,
-                          height: 0.9,
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/msce_attendance_app_logo.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) {
+                      return Center(
+                        child: Text(
+                          'M',
+                          style: TextStyle(
+                            color: AppTheme.primaryBlue,
+                            fontSize: 20.sp,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                      );
+                    },
                   ),
                 ),
               ),
-              SizedBox(width: 12.w),
+              SizedBox(width: 8.w),
+              // ✅ Welcome + Clock (Middle, Expanded)
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     Text(
                       'WELCOME',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 14.sp,
+                        fontSize: 12.sp,
                         fontWeight: FontWeight.w600,
-                        letterSpacing: 1,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    SizedBox(height: 4.h),
+                    SizedBox(height: 2.h),
                     Text(
-                      _currentTime,  // ✅ Live clock
+                      _currentTime,
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.w800,
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.w700,
                         fontFamily: 'monospace',
                       ),
                     ),
                   ],
                 ),
               ),
-              // ✅ Centre Code & Name
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (_centerCode != null)
-                    Text(
-                      'CODE: ${_centerCode!.toUpperCase()}',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 10.sp,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
+              SizedBox(width: 8.w),
+              // ✅ Center Code & Name (Right, Compact)
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    if (_centerCode != null)
+                      Text(
+                        'CODE: ${_centerCode!}',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 9.sp,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  if (_centerName != null)
-                    Text(
-                      _centerName!.toUpperCase(),
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11.sp,
-                        fontWeight: FontWeight.w700,
+                    if (_centerName != null)
+                      Text(
+                        _centerName!,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9.sp,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.right,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      textAlign: TextAlign.right,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
-          SizedBox(height: 12.h),
-          // ✅ Stats Row - Show filtered counts
-          Row(
-            children: [
-              _chip('TOTAL', _visible.length),  // ✅ Show filtered total (by batch)
-              SizedBox(width: 6.w),
-              _chip('PRESENT', _present),
-              SizedBox(width: 6.w),
-              _chip('ABSENT', _absent),
-              SizedBox(width: 8.w),
-              IconButton(
-                onPressed: _logout,
-                icon: const Icon(Icons.logout, color: Colors.white),
-                tooltip: 'Sign out',
-              ),
-            ],
+          SizedBox(height: 10.h),
+          // ✅ Stats Row - Responsive
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _chip('TOTAL', _visible.length),
+                SizedBox(width: 6.w),
+                _chip('PRESENT', _present),
+                SizedBox(width: 6.w),
+                _chip('ABSENT', _absent),
+                SizedBox(width: 4.w),
+                IconButton(
+                  onPressed: _logout,
+                  icon: const Icon(Icons.logout, color: Colors.white),
+                  tooltip: 'Sign out',
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints(minWidth: 36.w, minHeight: 36.h),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -827,7 +842,13 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icon(isMarked ? Icons.check_circle : Icons.camera_alt, size: 24),
               label: Text(
                 isMarked ? 'Marked ✓' : canTap ? 'Entry' : 'Disabled',
-                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w700),
+                style: TextStyle(
+                  fontSize: 14.sp,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
@@ -960,35 +981,21 @@ class _HomeScreenState extends State<HomeScreen> {
     DateTime? timestamp,
   }) async {
     try {
-      _snack('Saving entry...', success: false);
-
-      // ✅ Get center info
+      // ✅ Get center info immediately
       final center = await SessionService.getCenter();
       if (center == null) {
         _snack('Center info not found', success: false);
         return;
       }
 
-      // ✅ Get institute ID (fallback to center_id if not available)
+      // ✅ Get institute ID
       final instituteId = center['institute_id']?.toString() ?? center['id']?.toString() ?? '';
       if (instituteId.isEmpty) {
         _snack('Institute ID not found', success: false);
         return;
       }
 
-      // ✅ Read photo bytes and compress to under 100KB
-      // XFile.readAsBytes works on all platforms including web
-      // (dart:io File does not exist on web).
-      var photoBytes = await photo.readAsBytes();
-      print('📸 Original photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
-
-      // ✅ Compress if larger than 100KB
-      if (photoBytes.length > 102400) {  // 100KB
-        photoBytes = await _compressPhotoToUnder100KB(photoBytes);
-        print('📸 Compressed photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
-      }
-
-      // ✅ Get subject code from subject_name (primary) or subject_code (fallback)
+      // ✅ Get subject code and exam_student_id FIRST (needed for UI update)
       final subjectCode = subject['subject_name']?.toString() ??
                          subject['subject_code']?.toString() ??
                          subject['subject']?.toString() ??
@@ -1000,6 +1007,76 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
+      final examStudentId = subject['exam_student_id']?.toString() ?? '';
+      if (examStudentId.isEmpty) {
+        _snack('❌ Exam student ID not found', success: false);
+        return;
+      }
+
+      // ✅ INSTANT SUCCESS: Update UI immediately with placeholder
+      _snack('✅ Entry marked - PRESENT ✓', success: true);
+
+      setState(() {
+        for (int i = 0; i < _all.length; i++) {
+          if (_all[i].id == student.id) {
+            for (int j = 0; j < _all[i].subjects.length; j++) {
+              if (_all[i].subjects[j]['id'] == subject['id']) {
+                _all[i].subjects[j]['entry_photo_url'] = 'marking...';  // ✅ Show placeholder
+                _all[i].subjects[j]['entry_photo_at'] = DateTime.now().toIso8601String();
+                break;
+              }
+            }
+            break;
+          }
+        }
+      });
+
+      // ✅ BACKGROUND: Upload photo asynchronously (don't await)
+      _uploadEntryPhotoInBackground(
+        photo: photo,
+        student: student,
+        subject: subject,
+        subjectCode: subjectCode,
+        examStudentId: examStudentId,
+        instituteId: instituteId,
+        center: center,
+        latitude: latitude,
+        longitude: longitude,
+        timestamp: timestamp,
+      );
+
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Error: $e', success: false);
+      print('❌ Entry save error: $e');
+    }
+  }
+
+  /// ✅ Background upload - runs independently without blocking UI
+  Future<void> _uploadEntryPhotoInBackground({
+    required XFile photo,
+    required MsceStudent student,
+    required Map<String, dynamic> subject,
+    required String subjectCode,
+    required String examStudentId,
+    required String instituteId,
+    required Map<String, dynamic> center,
+    double? latitude,
+    double? longitude,
+    DateTime? timestamp,
+  }) async {
+    try {
+      // ✅ Read and compress photo
+      var photoBytes = await photo.readAsBytes();
+      print('📸 Original photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
+
+      if (photoBytes.length > 102400) {
+        photoBytes = await _compressPhotoToUnder100KB(photoBytes);
+        print('📸 Compressed photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
+      }
+
+      // ✅ Upload to B2
       final uploadResult = await StorageService.uploadAttendancePhoto(
         instituteId: instituteId,
         folderYear: DateTime.now().year.toString(),
@@ -1010,51 +1087,42 @@ class _HomeScreenState extends State<HomeScreen> {
         photoType: 'entry',
       );
 
-      final photoUrl = uploadResult['url'] ?? photo.path;
-      print('✅ Photo uploaded: $photoUrl');
+      var photoUrl = uploadResult['url'] ?? photo.path;
 
-      // ✅ Get seat number and exam_student_id from subject (each subject has its own ID!)
-      final seatNo = subject['seat_no']?.toString() ?? '';
-      final examStudentId = subject['exam_student_id']?.toString() ?? '';
-
-      if (examStudentId.isEmpty) {
-        _snack('❌ Exam student ID not found in subject data', success: false);
-        return;
+      // ✅ Convert proxy URL to direct B2 URL if needed
+      if (photoUrl.startsWith('/api/b2-upload')) {
+        final uri = Uri.parse('http://dummy.com$photoUrl');
+        final key = uri.queryParameters['key'];
+        if (key != null && key.isNotEmpty) {
+          photoUrl = 'https://f004.backblazeb2.com/file/attendance-students-photos/$key';
+          print('🔄 Converted proxy URL to direct B2 URL: $photoUrl');
+        }
       }
 
-      print('🔍 Using exam_student_id from subject: $examStudentId');
+      print('✅ Photo uploaded: $photoUrl');
 
-      // ✅ Save entry to database with location and timestamp
+      // ✅ Save to database
       final entryService = ExamEntryService();
       final result = await entryService.markSubjectEntry(
         centerId: center['id']!,
-        studentId: examStudentId,  // ✅ Use SUBJECT's exam_student_id, not student's!
+        studentId: examStudentId,
         photoPath: photoUrl,
         subjectCode: subjectCode,
         latitude: latitude,
         longitude: longitude,
         entryTimestamp: timestamp,
-        seatNo: seatNo,
+        seatNo: subject['seat_no']?.toString() ?? '',
       );
 
-      if (!mounted) return;
-
-      if (result.ok) {
-        _snack('✅ Entry marked - PRESENT ✓', success: true);
-
-        // ✅ Update local state immediately (faster than reload)
+      if (mounted) {
+        // ✅ Update UI with actual photo URL
         setState(() {
-          // Find and update ONLY the specific subject for this student
           for (int i = 0; i < _all.length; i++) {
             if (_all[i].id == student.id) {
-              // Update subjects in place - match by id (primary key)
               for (int j = 0; j < _all[i].subjects.length; j++) {
-                final subj = _all[i].subjects[j];
-                // Match by database ID (most precise)
-                if (subj['id'] == subject['id']) {
+                if (_all[i].subjects[j]['id'] == subject['id']) {
                   _all[i].subjects[j]['entry_photo_url'] = photoUrl;
-                  _all[i].subjects[j]['entry_photo_at'] = DateTime.now().toIso8601String();  // ✅ IST, not UTC
-                  print('✅ Updated subject ${subj['id']} with photo: $photoUrl');
+                  _all[i].subjects[j]['entry_photo_at'] = DateTime.now().toIso8601String();
                   break;
                 }
               }
@@ -1063,7 +1131,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         });
 
-        // ✅ AUTO-ENABLE next subject if exists
+        // ✅ AUTO-ENABLE next subject
         final sorted = _sortSubjectsByExamOrder(student.subjects.cast<Map<String, dynamic>>());
         final currentIndex = sorted.indexWhere((s) => s['subject_name'] == subjectCode);
 
@@ -1073,7 +1141,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
           if (nextSubjectId.isNotEmpty) {
             try {
-              // ✅ Set is_enabled=true for next subject
               await supabase
                   .from('exam_students')
                   .update({'is_enabled': true})
@@ -1084,17 +1151,14 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           }
         }
-
-        // Reload students to sync database state (happens in background)
-        await Future.delayed(const Duration(milliseconds: 500));
-        _load();
-      } else {
-        _snack('❌ ${result.message}', success: false);
       }
+
+      // ✅ Reload in background (don't await)
+      await Future.delayed(const Duration(milliseconds: 500));
+      _load();
     } catch (e) {
       if (!mounted) return;
-      _snack('Save failed: $e', success: false);
-      print('❌ Entry save error: $e');
+      print('❌ Background upload error: $e');
     }
   }
 

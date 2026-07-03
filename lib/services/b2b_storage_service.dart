@@ -243,14 +243,25 @@ class B2BStorageService {
 
       final uploadJson = jsonDecode(uploadResponse.body) as Map<String, dynamic>;
       final proxyUrl = (uploadJson['url'] ?? '').toString();
+      final directB2Url = (uploadJson['directUrl'] ?? '').toString();  // ✅ Direct B2 URL from API
       final fileId = (uploadJson['fileId'] ?? '').toString();
 
       if (proxyUrl.isEmpty) {
         throw Exception('No proxy URL returned from upload');
       }
 
+      // ✅ Use direct B2 URL if available (for mobile compatibility), fallback to proxy URL (for web)
+      final urlToStore = directB2Url.isNotEmpty ? directB2Url : proxyUrl;
+
+      if (kDebugMode) {
+        debugPrint('✅ Upload complete:');
+        debugPrint('   Proxy URL (web): $proxyUrl');
+        debugPrint('   Direct B2 URL (mobile): $directB2Url');
+        debugPrint('   Storing: $urlToStore');
+      }
+
       return {
-        'url': proxyUrl,
+        'url': urlToStore,  // ✅ Store direct B2 URL for mobile, proxy for web fallback
         'path': storagePath,
         'bucket': bucketName,
         'fileId': fileId,

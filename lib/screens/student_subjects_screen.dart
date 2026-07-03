@@ -146,34 +146,24 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
         return;
       }
 
-      // Upload to B2 via Vercel API
+      // ✅ Upload to B2 via StorageService (uses Supabase Edge Function on mobile, Vercel API on web)
       String photoUrl;
       try {
-        final fileName = '${DateTime.now().millisecondsSinceEpoch}_${seatNo}_entry.jpg';
-        debugPrint('📤 Uploading to B2 via Vercel API: $fileName');
+        debugPrint('📤 Uploading to B2 via StorageService...');
 
-        final http_client = http.Client();
-        final uploadResponse = await http_client.post(
-          Uri.parse('https://msceexamapp.vercel.app/api/b2-upload'),
-          headers: {
-            'X-File-Name': fileName,
-            'Content-Type': 'image/jpeg',
-          },
-          body: photoBytes,
-        ).timeout(const Duration(seconds: 60));
+        final uploadResult = await StorageService.uploadAttendancePhoto(
+          instituteId: subject['institute_id']?.toString() ?? subject['centre_id']?.toString() ?? '',
+          folderYear: DateTime.now().year.toString(),
+          srNo: seatNo,
+          subject: subjectName,
+          date: DateTime.now().toIso8601String().split('T').first,
+          photoBytes: photoBytes,
+          photoType: 'entry',
+        );
 
-        if (uploadResponse.statusCode != 200) {
-          throw Exception('API returned ${uploadResponse.statusCode}: ${uploadResponse.body}');
-        }
-
-        final responseData = jsonDecode(uploadResponse.body) as Map<String, dynamic>;
-        if (responseData['success'] != true) {
-          throw Exception('Upload failed: ${responseData['error']}');
-        }
-
-        photoUrl = responseData['url'] as String? ?? '';
+        photoUrl = uploadResult['url'] ?? '';
         if (photoUrl.isEmpty) {
-          throw Exception('No URL returned');
+          throw Exception('No URL returned from upload');
         }
 
         debugPrint('✅ Upload successful: $photoUrl');
