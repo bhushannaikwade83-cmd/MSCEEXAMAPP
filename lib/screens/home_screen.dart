@@ -250,9 +250,16 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ✅ Welcome + Clock Row
+          // ✅ Logo Row - MSCE Logo at top-left
           Row(
             children: [
+              Image.asset(
+                'assets/msce_attendance_app_logo.png',
+                height: 40.h,
+                width: 40.w,
+                fit: BoxFit.contain,
+              ),
+              SizedBox(width: 12.w),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
