@@ -1,6 +1,6 @@
 {
-    "name": "msce_exam_app",
-    "short_name": "msce_exam_app",
+    "name": "MSCE Exam Centre",
+    "short_name": "MSCE",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
