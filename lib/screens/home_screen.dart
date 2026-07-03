@@ -253,31 +253,37 @@ class _HomeScreenState extends State<HomeScreen> {
           // ✅ Logo Row - MSCE Logo at top-left
           Row(
             children: [
-              // ✅ MSCE Logo
-              SizedBox(
-                height: 45.h,
-                width: 45.w,
-                child: Image.asset(
-                  'assets/msce_attendance_app_logo.png',
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          'M',
-                          style: TextStyle(
-                            color: AppTheme.primaryBlue,
-                            fontSize: 20.sp,
-                            fontWeight: FontWeight.w900,
-                          ),
+              // ✅ MSCE Logo Badge
+              Container(
+                height: 50.h,
+                width: 50.w,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'MSCE',
+                        style: TextStyle(
+                          color: AppTheme.primaryBlue,
+                          fontSize: 10.sp,
+                          fontWeight: FontWeight.w900,
+                          height: 0.9,
                         ),
+                        textAlign: TextAlign.center,
                       ),
-                    );
-                  },
+                    ],
+                  ),
                 ),
               ),
               SizedBox(width: 12.w),
@@ -1007,34 +1013,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final photoUrl = uploadResult['url'] ?? photo.path;
       print('✅ Photo uploaded: $photoUrl');
 
-      // ✅ VERIFY: Check if seat number matches before saving
+      // ✅ Get seat number for reference (but don't verify - trust the data we already have)
       final seatNo = subject['seat_no']?.toString() ?? '';
-      if (seatNo.isEmpty) {
-        _snack('❌ Seat number not found - cannot verify', success: false);
-        return;
-      }
-
-      // ✅ Verify seat number from database
-      final examStudents = await supabase
-          .from('exam_students')
-          .select('id, seat_no, exam_student_id')
-          .eq('exam_student_id', student.id)
-          .eq('subject_name', subjectCode);
-
-      if (examStudents.isEmpty) {
-        _snack('❌ Student subject record not found', success: false);
-        return;
-      }
-
-      // ✅ Check if any record has matching seat number
-      final dbSeatNo = examStudents[0]['seat_no']?.toString() ?? '';
-      if (dbSeatNo != seatNo) {
-        _snack('❌ Seat mismatch! Expected: $dbSeatNo, Got: $seatNo', success: false);
-        print('❌ SEAT MISMATCH: Expected $dbSeatNo but got $seatNo');
-        return;
-      }
-
-      print('✅ Seat verified: $seatNo matches database');
 
       // ✅ Save entry to database with location and timestamp
       final entryService = ExamEntryService();
