@@ -506,10 +506,20 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: DropdownButtonFormField<String>(
                 value: _selectedBatch,
-                hint: Text('All Batches', style: TextStyle(fontSize: isMobile ? 9.sp : 10.sp)),
+                isExpanded: true, // ✅ Prevent horizontal pixel overflow
+                hint: Text('All Batches',
+                    style: TextStyle(fontSize: isMobile ? 9.sp : 10.sp),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 items: [
-                  const DropdownMenuItem(value: null, child: Text('All Batches')),
-                  ..._allBatches.map((b) => DropdownMenuItem(value: b, child: Text(b))),
+                  const DropdownMenuItem(
+                      value: null,
+                      child: Text('All Batches',
+                          maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  ..._allBatches.map((b) => DropdownMenuItem(
+                      value: b,
+                      child:
+                          Text(b, maxLines: 1, overflow: TextOverflow.ellipsis))),
                 ],
                 onChanged: (val) => setState(() {
                   _selectedBatch = val;
@@ -541,10 +551,20 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: DropdownButtonFormField<String>(
                 value: _selectedSubject,
-                hint: Text('All Subjects', style: TextStyle(fontSize: isMobile ? 9.sp : 10.sp)),
+                isExpanded: true, // ✅ Prevent horizontal pixel overflow
+                hint: Text('All Subjects',
+                    style: TextStyle(fontSize: isMobile ? 9.sp : 10.sp),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 items: [
-                  const DropdownMenuItem(value: null, child: Text('All Subjects')),
-                  ..._allSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s))),
+                  const DropdownMenuItem(
+                      value: null,
+                      child: Text('All Subjects',
+                          maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  ..._allSubjects.map((s) => DropdownMenuItem(
+                      value: s,
+                      child:
+                          Text(s, maxLines: 1, overflow: TextOverflow.ellipsis))),
                 ],
                 onChanged: (val) => setState(() {
                   _selectedSubject = val;
