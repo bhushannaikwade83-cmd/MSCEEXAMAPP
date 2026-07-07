@@ -5,18 +5,18 @@ import 'b2b_storage_service.dart';
 
 /// Storage Service for organizing attendance photos
 /// Uses B2B Storage (Backblaze B2) for file storage
-/// 
+///
 /// Folder Structure:
 ///   institute_id/
 ///     folder_year/
-///       rollNumber/
+///       seatNo/
 ///         subject/
 ///           YYYY-MM-DD/
 ///             photo.jpg
 class StorageService {
   /// Generate storage path for attendance photo
-  /// 
-  /// Structure: institute_id/folder_year/srNo/subject/YYYY-MM-DD/photo.jpg
+  ///
+  /// Structure: institute_id/folder_year/seatNo/subject/YYYY-MM-DD/photo.jpg
   static String generatePhotoPath({
     required String instituteId,
     required String folderYear,
@@ -27,16 +27,17 @@ class StorageService {
     return B2BStorageService.generatePhotoPath(
       instituteId: instituteId,
       folderYear: folderYear,
-      rollNumber: srNo,
+      seatNo: srNo,
       subject: subject,
       date: date,
     );
   }
 
   /// Upload attendance photo to B2B Storage
-  /// 
+  ///
   /// Returns the file URL and storage path
   /// photoType: 'entry' or 'exit' (optional, defaults to 'entry' for backward compatibility)
+  /// timestamp: Unix timestamp or ISO string for versioning (optional)
   static Future<Map<String, String>> uploadAttendancePhoto({
     required String instituteId,
     required String folderYear,
@@ -45,16 +46,18 @@ class StorageService {
     required String date,
     required List<int> photoBytes,
     String? photoType, // 'entry' or 'exit'
+    String? timestamp, // ✅ NEW: timestamp for versioning
   }) async {
     try {
       final result = await B2BStorageService.uploadAttendancePhoto(
         instituteId: instituteId,
         folderYear: folderYear,
-        rollNumber: srNo,
+        seatNo: srNo,
         subject: subject,
         date: date,
         photoBytes: photoBytes,
         photoType: photoType,
+        timestamp: timestamp,  // ✅ NEW: Pass timestamp
       );
 
       return {

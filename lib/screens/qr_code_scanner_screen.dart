@@ -171,33 +171,51 @@ class _QrCodeScannerScreenState extends State<QrCodeScannerScreen> {
     final firstRow = studentRows[0];
     final studentName = firstRow['student_name']?.toString() ?? 'Unknown';
     final photoUrl = firstRow['photo_url']?.toString() ?? '';
+    final instituteId = firstRow['institute_id']?.toString() ?? '';
 
-    // ✅ Fetch all subject names for display (StudentSubjectsScreen will load full details)
-    final subjectsQuery = supabase
+    // ✅ Fetch ALL subjects for this STUDENT by institute_id + student_name + centre_code
+    print('🔍 QR Scanner: Fetching ALL subjects for institute_id=$instituteId, student_name=$studentName, centre_code=$_centerCode');
+
+    final allSubjectsQuery = supabase
         .from('exam_students')
-        .select('subject_name')
-        .eq('exam_student_id', firstRow['exam_student_id']?.toString() ?? '')
+        // ✅ Include sr_no for display in StudentSubjectsScreen
+        .select('id, subject_name, exam_date, start_time, exam_student_id, seat_no, sr_no, batch, entry_photo_url, is_enabled')
+        .eq('institute_id', instituteId)
+        .eq('student_name', studentName)
         .eq('centre_code', _centerCode!);
 
-    final subjectRows = await subjectsQuery;
+    final allSubjectRows = await allSubjectsQuery;
+    print('✅ QR Scanner: Found ${allSubjectRows.length} subject rows for student=$studentName');
+
+    for (final raw in allSubjectRows as List) {
+      final row = Map<String, dynamic>.from(raw as Map);
+      print('  📚 Subject: ${row['subject_name']} | exam_student_id: ${row['exam_student_id']} | Date: ${row['exam_date']} | Time: ${row['start_time']}');
+    }
+
     final subjects = <String>[];
 
-    for (final raw in subjectRows as List) {
+    for (final raw in allSubjectRows as List) {
       final row = Map<String, dynamic>.from(raw as Map);
-      final subjectName = row['subject_name']?.toString() ?? '';
+      final subjectName = row['subject_name']?.toString() ??
+                          row['subject_code']?.toString() ?? '';
       if (subjectName.isNotEmpty && !subjects.contains(subjectName)) {
         subjects.add(subjectName);
+        print('  ✅ Added subject: $subjectName');
       }
     }
+    print('✅ QR Scanner: Total unique subjects: ${subjects.length}');
+
+    // ✅ Get first exam_student_id for creating ExamStudent object
+    final firstExamStudentId = firstRow['exam_student_id']?.toString() ?? '';
 
     // ✅ Create ExamStudent object - StudentSubjectsScreen will load full exam_students rows
     return ExamStudent(
-      id: firstRow['exam_student_id']?.toString() ?? '',
-      rollNumber: firstRow['seat_no']?.toString() ?? '',
+      id: firstExamStudentId,  // ✅ Use first exam_student_id
+      seatNo: firstRow['seat_no']?.toString() ?? '',
       name: studentName,
       examTime: DateTime.now(),
       passportPhotoUrl: photoUrl.isNotEmpty ? photoUrl : null,
-      subjects: subjects,  // ✅ Just subject names
+      subjects: subjects,  // ✅ All subject names
       isMarked: false,
     );
   }

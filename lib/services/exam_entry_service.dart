@@ -206,16 +206,17 @@ class ExamEntryService {
       }
 
       try {
+        // ✅ Use exam_student_id (per-subject ID) as primary key ONLY
+        // Removes .eq('subject_name') - exam_student_id is already unique per subject
         final response = await supabase
             .from('exam_students')
             .update(payload)
             .eq('exam_student_id', studentId)
-            .eq('subject_name', subjectCode)
             .select();
 
         if (kDebugMode) {
           debugPrint('✅ Update SUCCESS! Rows updated: ${response.length}');
-          debugPrint('✅ Entry saved: student=$studentId, subject=$subjectCode, photo=$photoPath, lat=$latitude, lng=$longitude');
+          debugPrint('✅ Entry saved: exam_student_id=$studentId, subject=$subjectCode, photo=$photoPath, lat=$latitude, lng=$longitude');
         }
       } catch (e) {
         if (kDebugMode) {

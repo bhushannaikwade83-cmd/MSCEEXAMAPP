@@ -50,10 +50,18 @@ class _HomeScreenState extends State<HomeScreen> {
   // ✅ New filters
   String? _selectedBatch;  // ✅ Batch filter
   List<String> _allBatches = [];  // ✅ All unique batches
+  String? _selectedSubject;  // ✅ Subject filter
+  List<String> _allSubjects = [];  // ✅ All unique subjects
+
+  // ✅ Pagination
+  int _currentPage = 1;
+  int _itemsPerPage = 20;  // ✅ 20 students per page
+  late PageController _pageController;
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController();  // ✅ Initialize pagination
     _searchCtrl.addListener(_onSearch);
     _updateClock();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) => _updateClock());
@@ -65,6 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _debounce?.cancel();
     _clockTimer?.cancel();
     _searchCtrl.dispose();
+    _pageController.dispose();  // ✅ Dispose pagination controller
     super.dispose();
   }
 
@@ -133,6 +142,22 @@ class _HomeScreenState extends State<HomeScreen> {
         _unmatchedRoster = 0;
         _all = studentsList;
         _allBatches = batches.toList()..sort();  // ✅ Sort batches
+
+        // ✅ Extract all unique subjects
+        final subjects = <String>{};
+        for (final student in studentsList) {
+          for (final subject in student.subjects) {
+            final subjectName = subject['subject_name']?.toString() ??
+                subject['subject_code']?.toString() ??
+                subject['subject']?.toString() ??
+                '';
+            if (subjectName.isNotEmpty) {
+              subjects.add(subjectName);
+            }
+          }
+        }
+        _allSubjects = subjects.toList()..sort();  // ✅ Sort subjects
+        _currentPage = 1;  // ✅ Reset pagination on load
         _loading = false;
 
         if (studentsList.isEmpty) {
@@ -168,9 +193,19 @@ class _HomeScreenState extends State<HomeScreen> {
     final searchTerm = _searchCtrl.text.toLowerCase();
     if (searchTerm.isNotEmpty) {
       filtered = filtered.where((s) {
-        return s.srNo.toLowerCase().contains(searchTerm) ||
-               s.name.toLowerCase().contains(searchTerm) ||
-               s.lastName.toLowerCase().contains(searchTerm);
+        // Check student name/SR NO
+        final nameMatch = s.name.toLowerCase().contains(searchTerm) ||
+                         s.lastName.toLowerCase().contains(searchTerm) ||
+                         s.srNo.toLowerCase().contains(searchTerm);
+
+        // ✅ Also check SR NO in all subjects (each subject can have different SR NO)
+        final subjectMatch = s.subjects.any((subject) {
+          final srNo = subject['sr_no']?.toString().toLowerCase() ?? '';
+          final seatNo = subject['seat_no']?.toString().toLowerCase() ?? '';
+          return srNo.contains(searchTerm) || seatNo.contains(searchTerm);
+        });
+
+        return nameMatch || subjectMatch;
       }).toList();
     }
 
@@ -181,7 +216,53 @@ class _HomeScreenState extends State<HomeScreen> {
       }).toList();
     }
 
+    // ✅ Apply subject filter and sort by seat number
+    if (_selectedSubject != null && _selectedSubject!.isNotEmpty) {
+      filtered = filtered.where((s) {
+        return s.subjects.any((subj) {
+          final subjectName = subj['subject_name']?.toString() ??
+              subj['subject_code']?.toString() ??
+              subj['subject']?.toString() ??
+              '';
+          return subjectName == _selectedSubject;
+        });
+      }).toList();
+
+      // ✅ Sort by seat number in ascending order
+      filtered.sort((a, b) {
+        final aSeat = a.subjects.firstWhere(
+          (s) => (s['subject_name']?.toString() ?? s['subject_code']?.toString() ?? s['subject']?.toString() ?? '') == _selectedSubject,
+          orElse: () => {},
+        )['seat_no']?.toString() ?? '';
+
+        final bSeat = b.subjects.firstWhere(
+          (s) => (s['subject_name']?.toString() ?? s['subject_code']?.toString() ?? s['subject']?.toString() ?? '') == _selectedSubject,
+          orElse: () => {},
+        )['seat_no']?.toString() ?? '';
+
+        return aSeat.compareTo(bSeat);
+      });
+    }
+
     return filtered;
+  }
+
+  /// ✅ Fetch SR NO from database (exam_students table) for the student
+  /// Returns sr_no from the first matching subject
+  String _getSrNoFromSubjects(List<Map<String, dynamic>> subjects, String? filterSubject) {
+    if (subjects.isEmpty) return '';
+
+    // If filtering by subject, get sr_no from that subject
+    if (filterSubject != null && filterSubject.isNotEmpty) {
+      final subject = subjects.firstWhere(
+        (s) => (s['subject_name']?.toString() ?? s['subject_code']?.toString() ?? '') == filterSubject,
+        orElse: () => <String, dynamic>{},
+      );
+      return subject['sr_no']?.toString() ?? '';
+    }
+
+    // Otherwise return from first subject
+    return subjects.isNotEmpty ? (subjects.first['sr_no']?.toString() ?? '') : '';
   }
 
   // ✅ Count based on VISIBLE (filtered) students, not all
@@ -196,6 +277,32 @@ class _HomeScreenState extends State<HomeScreen> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  // ✅ Pagination helper methods
+  int get _totalPages => (_visible.length / _itemsPerPage).ceil();
+
+  List<MsceStudent> get _paginatedStudents {
+    final start = (_currentPage - 1) * _itemsPerPage;
+    final end = start + _itemsPerPage;
+    return _visible.sublist(start, end > _visible.length ? _visible.length : end);
+  }
+
+  void _goToPage(int page) {
+    if (page < 1 || page > _totalPages) return;
+    setState(() => _currentPage = page);
+  }
+
+  void _nextPage() {
+    if (_currentPage < _totalPages) {
+      _goToPage(_currentPage + 1);
+    }
+  }
+
+  void _previousPage() {
+    if (_currentPage > 1) {
+      _goToPage(_currentPage - 1);
+    }
   }
 
   Future<void> _logout() async {
@@ -234,9 +341,14 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             _buildHeader(),
+            // ✅ Status filter buttons (ALL, PRESENT, ABSENT) - moved to top
+            _buildStatusFilters(),
+            // ✅ All Batches + All Subjects filters below status buttons
+            _buildAdvancedFilters(),
             _buildSearch(),
-            _buildFilters(),
             Expanded(child: _buildBody()),
+            // ✅ Pagination fixed at bottom (only if multiple pages)
+            if (_totalPages > 1) _buildPaginationBar(),
           ],
         ),
       ),
@@ -246,18 +358,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHeader() {
     return Container(
       color: AppTheme.primaryBlueDark,
-      padding: EdgeInsets.fromLTRB(12.w, 10.h, 12.w, 10.h),
+      padding: EdgeInsets.fromLTRB(12.w, 4.h, 12.w, 2.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ✅ Top Row: Logo + Welcome + Center Info (Responsive)
+          // ✅ Top Row: Logo + Center Info (Right side)
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ✅ MSCE Logo Badge - Shows actual logo image
               Container(
-                height: 50.h,
-                width: 50.w,
+                height: 36.h,
+                width: 36.w,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
@@ -302,40 +413,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               SizedBox(width: 8.w),
-              // ✅ Welcome + Clock (Middle, Expanded)
+              // ✅ Center Code & Name (Expanded, Right side)
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    Text(
-                      'WELCOME',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12.sp,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    SizedBox(height: 2.h),
-                    Text(
-                      _currentTime,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13.sp,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(width: 8.w),
-              // ✅ Center Code & Name (Right, Compact)
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     if (_centerCode != null)
@@ -343,7 +424,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         'CODE: ${_centerCode!}',
                         style: TextStyle(
                           color: Colors.white70,
-                          fontSize: 9.sp,
+                          fontSize: 8.sp,
                           fontWeight: FontWeight.w600,
                         ),
                         maxLines: 1,
@@ -354,55 +435,161 @@ class _HomeScreenState extends State<HomeScreen> {
                         _centerName!,
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 9.sp,
+                          fontSize: 8.sp,
                           fontWeight: FontWeight.w600,
                         ),
-                        textAlign: TextAlign.right,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                   ],
                 ),
               ),
+              // ✅ Logout button
+              IconButton(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout, color: Colors.white, size: 18),
+                tooltip: 'Sign out',
+                padding: EdgeInsets.zero,
+                constraints: BoxConstraints(minWidth: 30.w, minHeight: 30.h),
+              ),
             ],
           ),
-          SizedBox(height: 10.h),
-          // ✅ Stats Row - Responsive
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _chip('TOTAL', _visible.length),
-                SizedBox(width: 6.w),
-                _chip('PRESENT', _present),
-                SizedBox(width: 6.w),
-                _chip('ABSENT', _absent),
-                SizedBox(width: 4.w),
-                IconButton(
-                  onPressed: _logout,
-                  icon: const Icon(Icons.logout, color: Colors.white),
-                  tooltip: 'Sign out',
-                  padding: EdgeInsets.zero,
-                  constraints: BoxConstraints(minWidth: 36.w, minHeight: 36.h),
+          SizedBox(height: 2.h),
+          // ✅ Welcome + Clock (Same line, left + right)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'WELCOME',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w600,
                 ),
-              ],
-            ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                _currentTime,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _chip(String label, int n) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(14.r),
+
+
+  // ✅ NEW: Advanced filters (Batch + Subject) on SAME line - AUTO RESPONSIVE
+  Widget _buildAdvancedFilters() {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final horizontalPad = isMobile ? 10.w : 12.w;
+    final verticalPad = isMobile ? 6.h : 8.h;
+    final innerHPad = isMobile ? 8.w : 10.w;
+    final innerVPad = isMobile ? 5.h : 6.h;
+    final gap = isMobile ? 6.w : 8.w;
+    final borderRad = isMobile ? 5.r : 6.r;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(horizontalPad, verticalPad, horizontalPad, verticalPad),
+      child: Row(
+        children: [
+          // Batch filter (LEFT)
+          if (_allBatches.isNotEmpty)
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: _selectedBatch,
+                hint: Text('All Batches', style: TextStyle(fontSize: isMobile ? 9.sp : 10.sp)),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('All Batches')),
+                  ..._allBatches.map((b) => DropdownMenuItem(value: b, child: Text(b))),
+                ],
+                onChanged: (val) => setState(() {
+                  _selectedBatch = val;
+                  _currentPage = 1;
+                }),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(borderRad)),
+                  contentPadding: EdgeInsets.symmetric(horizontal: innerHPad, vertical: innerVPad),
+                  isDense: true,
+                  suffixIcon: _selectedBatch != null
+                      ? IconButton(
+                          icon: Icon(Icons.clear, size: isMobile ? 15 : 16),
+                          onPressed: () => setState(() {
+                            _selectedBatch = null;
+                            _currentPage = 1;
+                          }),
+                          padding: EdgeInsets.zero,
+                          constraints: BoxConstraints(minWidth: isMobile ? 26.w : 28.w),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          SizedBox(width: gap),
+          // Subject filter (RIGHT)
+          if (_allSubjects.isNotEmpty)
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: _selectedSubject,
+                hint: Text('All Subjects', style: TextStyle(fontSize: isMobile ? 9.sp : 10.sp)),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('All Subjects')),
+                  ..._allSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s))),
+                ],
+                onChanged: (val) => setState(() {
+                  _selectedSubject = val;
+                  _currentPage = 1;
+                }),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(borderRad)),
+                  contentPadding: EdgeInsets.symmetric(horizontal: innerHPad, vertical: innerVPad),
+                  isDense: true,
+                  suffixIcon: _selectedSubject != null
+                      ? IconButton(
+                          icon: Icon(Icons.clear, size: isMobile ? 15 : 16),
+                          onPressed: () => setState(() {
+                            _selectedSubject = null;
+                            _currentPage = 1;
+                          }),
+                          padding: EdgeInsets.zero,
+                          constraints: BoxConstraints(minWidth: isMobile ? 26.w : 28.w),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+        ],
       ),
-      child: Text(
-        '$label $n',
-        style: TextStyle(color: Colors.white, fontSize: 10.sp, fontWeight: FontWeight.w700),
+    );
+  }
+
+  // ✅ NEW: Status filters (moved below search)
+  Widget _buildStatusFilters() {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 8.h),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _filterChip(_Filter.all, 'ALL (${_visible.length})'),
+            SizedBox(width: 8.w),
+            _filterChip(_Filter.present, 'PRESENT ($_present)'),
+            SizedBox(width: 8.w),
+            _filterChip(_Filter.absent, 'ABSENT ($_absent)'),
+          ],
+        ),
       ),
     );
   }
@@ -432,69 +619,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildFilters() {
-    return Column(
-      children: [
-        // Status filters
-        Padding(
-          padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 10.h),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _filterChip(_Filter.all, 'ALL (${_visible.length})'),  // ✅ Show visible count
-                SizedBox(width: 8.w),
-                _filterChip(_Filter.present, 'PRESENT ($_present)'),
-                SizedBox(width: 8.w),
-                _filterChip(_Filter.absent, 'ABSENT ($_absent)'),
-              ],
-            ),
-          ),
-        ),
-        // ✅ Advanced filters
-        if (_allBatches.isNotEmpty)
-          Padding(
-            padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 12.h),
-            child: Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _selectedBatch,
-                    hint: const Text('Filter by Batch'),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('All Batches')),
-                      ..._allBatches.map((b) => DropdownMenuItem(value: b, child: Text(b))),
-                    ],
-                    onChanged: (val) => setState(() {
-                      _selectedBatch = val;
-                    }),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.r)),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-                    ),
-                  ),
-                ),
-                SizedBox(width: 10.w),
-                // Clear filter button
-                ElevatedButton(
-                  onPressed: () => setState(() {
-                    _selectedBatch = null;
-                    _searchCtrl.clear();
-                  }),
-                  style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(horizontal: 8.w),
-                    backgroundColor: Colors.grey[400],
-                  ),
-                  child: const Icon(Icons.clear, size: 20),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
 
   Widget _filterChip(_Filter f, String label) {
     final selected = _filter == f;
@@ -539,10 +663,13 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
     return RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: () async {
+        await _load();
+        _goToPage(1);  // ✅ Reset to first page on refresh
+      },
       child: ListView.builder(
-        padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 88.h),
-        itemCount: visible.length + (_unmatchedRoster > 0 ? 1 : 0),
+        padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 12.h),
+        itemCount: _paginatedStudents.length + (_unmatchedRoster > 0 ? 1 : 0),
         itemBuilder: (_, i) {
           if (_unmatchedRoster > 0 && i == 0) {
             return Padding(
@@ -561,13 +688,104 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
           final idx = i - (_unmatchedRoster > 0 ? 1 : 0);
-          return _studentCard(visible[idx]);
+          // ✅ Pass selected subject to student card (shows full view with only that subject's button)
+          return _studentCard(_paginatedStudents[idx], _selectedSubject);
         },
       ),
     );
   }
 
-  Widget _studentCard(MsceStudent s) {
+  // ✅ Subject-specific card (when subject filter is selected)
+  Widget _studentSubjectCard(MsceStudent s, String selectedSubject) {
+    // Find the selected subject row for this student
+    final subjectRow = s.subjects.firstWhere(
+      (subj) {
+        final subjName = subj['subject_name']?.toString() ??
+            subj['subject_code']?.toString() ??
+            subj['subject']?.toString() ??
+            '';
+        return subjName == selectedSubject;
+      },
+      orElse: () => {},
+    );
+
+    if (subjectRow.isEmpty) {
+      return const SizedBox.shrink();  // Skip if student doesn't have this subject
+    }
+
+    final seatNo = subjectRow['seat_no']?.toString() ?? '—';
+    final batch = subjectRow['batch']?.toString() ?? '—';
+    final isMarked = subjectRow['entry_photo_url'] != null &&
+                     subjectRow['entry_photo_url'].toString().isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GovElevatedCard(
+        padding: EdgeInsets.all(12.w),
+        child: Row(
+          children: [
+            // Student name + seat no
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.displayName,
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.sp),
+                  ),
+                  SizedBox(height: 4.h),
+                  Text(
+                    'SEAT: $seatNo | BATCH: $batch',
+                    style: TextStyle(fontSize: 11.sp, color: AppTheme.textGray),
+                  ),
+                  if (isMarked) ...[
+                    SizedBox(height: 8.h),
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryGreen.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '✓ Entry Marked',
+                        style: TextStyle(color: AppTheme.primaryGreen, fontSize: 11.sp, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            SizedBox(width: 12.w),
+            // Entry button
+            ElevatedButton(
+              onPressed: isMarked ? null : () => _onMarkEntry(context, s, subjectRow, selectedSubject),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isMarked ? Colors.grey[300] : AppTheme.primaryGreen,
+                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+              ),
+              child: Text(
+                isMarked ? '✓ Done' : 'Mark Entry',
+                style: TextStyle(
+                  color: isMarked ? Colors.grey[600] : Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.sp,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ Handle marking entry (extracted for reuse)
+  Future<void> _onMarkEntry(BuildContext context, MsceStudent student, Map<String, dynamic> subject, String subjectCode) async {
+    // Implement same logic as home_screen entry marking
+    print('Marking entry for ${student.displayName} - $subjectCode');
+    // TODO: Call actual entry marking logic
+  }
+
+  Widget _studentCard(MsceStudent s, [String? filterSubject]) {
     final hasPhoto = s.photoUrl.isNotEmpty;
 
     // ✅ DEBUG: Check if thumbnail photo is loaded
@@ -607,7 +825,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           hasPhoto
                               ? SecureNetworkImage(
-                                  cacheKey: 'student_face_${s.id}',
+                                  cachePhotos: false,  // ✅ Always fetch fresh profile photo
+                                  cacheKey: 'student_face_${s.id}_${s.photoVersion ?? '0'}',
                                   imageUrl: s.photoUrl,
                                   version: s.photoVersion ?? '0',
                                   width: 110.w,
@@ -660,8 +879,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: TextStyle(fontSize: 12.sp, color: AppTheme.textGray),
                         ),
                       SizedBox(height: 4.h),
+                      // ✅ Get SR NO from database (first subject's sr_no)
                       Text(
-                        'SR NO: ${_formatSr(s.srNo)}',
+                        'SR NO: ${_formatSr(_getSrNoFromSubjects(s.subjects, filterSubject))}',
                         style: TextStyle(
                           fontSize: 12.sp,
                           fontWeight: FontWeight.w600,
@@ -676,13 +896,28 @@ class _HomeScreenState extends State<HomeScreen> {
             SizedBox(height: 12.h),
             Divider(height: 1, color: AppTheme.dividerColor),
             SizedBox(height: 8.h),
-            // ✅ All Subjects - SORTED by exam date/time (earliest first)
-            ..._sortSubjectsByExamOrder(s.subjects).asMap().entries.map((entry) {
-              final idx = entry.key;
-              final subject = entry.value as Map<String, dynamic>;
-              final isEnabled = _isSubjectEnabled(s, subject, idx);
-              return _buildSubjectRow(s, subject, idx < s.subjects.length - 1, isEnabled);
-            }),
+            // ✅ Subjects - filtered by selected subject if any
+            ...(() {
+              var subjectsToShow = _sortSubjectsByExamOrder(s.subjects);
+
+              // ✅ If subject filter selected, show only that subject
+              if (filterSubject != null && filterSubject!.isNotEmpty) {
+                subjectsToShow = subjectsToShow.where((subj) {
+                  final subjName = subj['subject_name']?.toString() ??
+                      subj['subject_code']?.toString() ??
+                      subj['subject']?.toString() ??
+                      '';
+                  return subjName == filterSubject;
+                }).toList();
+              }
+
+              return subjectsToShow.asMap().entries.map((entry) {
+                final idx = entry.key;
+                final subject = entry.value as Map<String, dynamic>;
+                final isEnabled = _isSubjectEnabled(s, subject, idx);
+                return _buildSubjectRow(s, subject, false, isEnabled);  // ✅ No divider for single subject
+              });
+            })(),
           ],
         ),
       ),
@@ -695,6 +930,7 @@ class _HomeScreenState extends State<HomeScreen> {
                        subject['subject_code']?.toString() ??
                        '—').toUpperCase();  // ✅ ALL CAPS
     final seatNo = (subject['seat_no']?.toString() ?? '—').toUpperCase();
+    final srNo = (subject['sr_no']?.toString() ?? '—');  // ✅ Get SR NO from database
     final batch = (subject['batch']?.toString() ?? '—').toUpperCase();
 
     // ✅ CRITICAL: Only show photo if THIS specific exam_students row has entry_photo_url
@@ -745,6 +981,15 @@ class _HomeScreenState extends State<HomeScreen> {
             SizedBox(width: 4.w),
             Text('SEAT: $seatNo', style: TextStyle(fontSize: 11.sp, color: AppTheme.textGray)),
             SizedBox(width: 12.w),
+            // ✅ SR NO from database
+            Icon(Icons.assignment, size: 14, color: AppTheme.textGray),
+            SizedBox(width: 4.w),
+            Text('SR: $srNo', style: TextStyle(fontSize: 11.sp, color: AppTheme.textGray)),
+          ],
+        ),
+        SizedBox(height: 4.h),
+        Row(
+          children: [
             Icon(Icons.groups, size: 14, color: AppTheme.textGray),
             SizedBox(width: 4.w),
             Text('BATCH: $batch', style: TextStyle(fontSize: 11.sp, color: AppTheme.textGray)),
@@ -763,17 +1008,27 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         SizedBox(height: 8.h),
-        // ✅ Entry Photo Box (full width)
+        // ✅ Entry Photo Box (full width + clickable for zoom)
         if (isMarked && subject['entry_photo_url'] != null)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: double.infinity,
-              height: 200.h,  // ✅ Full width height 200
-              child: SecureNetworkImage(
-                cacheKey: 'entry_${subject['id']}',
-                imageUrl: subject['entry_photo_url'],
-                fit: BoxFit.cover,
+          GestureDetector(
+            onTap: () => _showPhotoFullscreen(subject['entry_photo_url'], 'Entry - $subjectCode'),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: double.infinity,
+                height: 300.h,  // ✅ INCREASED: Better visibility
+                child: Stack(
+                  children: [
+                    SecureNetworkImage(
+                      // ✅ ALWAYS FRESH: Disable cache, fetch from B2 every time
+                      // Entry photos update frequently, so always get latest from database
+                      cachePhotos: false,
+                      cacheKey: 'entry_${subject['id']}_${subject['entry_photo_url']?.hashCode ?? ''}',
+                      imageUrl: subject['entry_photo_url'],
+                      fit: BoxFit.cover,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -925,6 +1180,139 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ✅ Build pagination bar (responsive for mobile/tablet)
+  Widget _buildPaginationBar() {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppTheme.dividerColor)),
+      ),
+      child: isMobile
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Page info on top
+                Padding(
+                  padding: EdgeInsets.only(bottom: 8.h),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Page $_currentPage of $_totalPages',
+                        style: TextStyle(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      Text(
+                        '${_paginatedStudents.length} of ${_visible.length} students',
+                        style: TextStyle(
+                          fontSize: 10.sp,
+                          color: AppTheme.textGray,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Buttons row on bottom
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Previous button
+                    Expanded(
+                      child: SizedBox(
+                        height: 40.h,
+                        child: ElevatedButton.icon(
+                          onPressed: _currentPage > 1 ? _previousPage : null,
+                          icon: const Icon(Icons.chevron_left, size: 18),
+                          label: const Text('Prev'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryBlue,
+                            disabledBackgroundColor: AppTheme.dividerColor,
+                            padding: EdgeInsets.symmetric(horizontal: 8.w),
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 8.w),
+                    // Next button
+                    Expanded(
+                      child: SizedBox(
+                        height: 40.h,
+                        child: ElevatedButton.icon(
+                          onPressed: _currentPage < _totalPages ? _nextPage : null,
+                          icon: const Icon(Icons.chevron_right, size: 18),
+                          label: const Text('Next'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryBlue,
+                            disabledBackgroundColor: AppTheme.dividerColor,
+                            padding: EdgeInsets.symmetric(horizontal: 8.w),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Previous button
+                ElevatedButton.icon(
+                  onPressed: _currentPage > 1 ? _previousPage : null,
+                  icon: const Icon(Icons.chevron_left),
+                  label: const Text('Previous'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryBlue,
+                    disabledBackgroundColor: AppTheme.dividerColor,
+                  ),
+                ),
+
+                // Page info
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Page $_currentPage of $_totalPages',
+                          style: TextStyle(
+                            fontSize: 13.sp,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textDark,
+                          ),
+                        ),
+                        Text(
+                          '${_paginatedStudents.length} of ${_visible.length} students',
+                          style: TextStyle(
+                            fontSize: 11.sp,
+                            color: AppTheme.textGray,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Next button
+                ElevatedButton.icon(
+                  onPressed: _currentPage < _totalPages ? _nextPage : null,
+                  icon: const Icon(Icons.chevron_right),
+                  label: const Text('Next'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryBlue,
+                    disabledBackgroundColor: AppTheme.dividerColor,
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
   String _formatSr(String sr) {
     final n = int.tryParse(sr.trim());
     if (n != null) return n.toString().padLeft(3, '0');
@@ -951,8 +1339,9 @@ class _HomeScreenState extends State<HomeScreen> {
         insetPadding: const EdgeInsets.all(16),
         child: Stack(
           children: [
-            // ✅ Full screen photo
+            // ✅ Full screen photo - ALWAYS FRESH (same as thumbnail)
             SecureNetworkImage(
+              cachePhotos: false,  // ✅ Always fetch fresh, never use cache
               cacheKey: 'fullscreen_$photoUrl',
               imageUrl: photoUrl,
               fit: BoxFit.contain,
@@ -998,19 +1387,27 @@ class _HomeScreenState extends State<HomeScreen> {
     DateTime? timestamp,
   }) async {
     try {
+      print('═══════════════════════════════════════════════════════════');
+      print('🚀 [STEP 1] Entry marking started for: ${student.name}');
+      print('═══════════════════════════════════════════════════════════');
+
       // ✅ Get center info immediately
       final center = await SessionService.getCenter();
       if (center == null) {
+        print('❌ [STEP 1] Center info not found');
         _snack('Center info not found', success: false);
         return;
       }
+      print('✅ [STEP 1] Center retrieved: ${center['name']} (ID: ${center['id']})');
 
-      // ✅ Get institute ID
-      final instituteId = center['institute_id']?.toString() ?? center['id']?.toString() ?? '';
-      if (instituteId.isEmpty) {
-        _snack('Institute ID not found', success: false);
+      // ✅ Get centre code (NOT institute_id which is UUID)
+      final centreCode = center['code']?.toString() ?? '';
+      if (centreCode.isEmpty) {
+        print('❌ [STEP 1] Centre code not found in center: $center');
+        _snack('Centre code not found', success: false);
         return;
       }
+      print('✅ [STEP 1] Centre code extracted: $centreCode');
 
       // ✅ Get subject code and exam_student_id FIRST (needed for UI update)
       final subjectCode = subject['subject_name']?.toString() ??
@@ -1019,18 +1416,24 @@ class _HomeScreenState extends State<HomeScreen> {
                          '';
 
       if (subjectCode.isEmpty) {
-        print('❌ Subject fields: ${subject.keys}');
+        print('❌ [STEP 1] Subject name not found. Available fields: ${subject.keys}');
         _snack('Subject name not found', success: false);
         return;
       }
+      print('✅ [STEP 1] Subject: $subjectCode');
 
-      final examStudentId = subject['exam_student_id']?.toString() ?? '';
+      final examStudentId = subject['exam_student_id']?.toString() ?? subject['id']?.toString() ?? '';
       if (examStudentId.isEmpty) {
+        print('❌ [STEP 1] Exam student ID not found in subject: ${subject.keys}');
         _snack('❌ Exam student ID not found', success: false);
         return;
       }
+      print('✅ [STEP 1] Exam student ID: $examStudentId');
 
       // ✅ INSTANT SUCCESS: Update UI immediately with placeholder
+      print('═══════════════════════════════════════════════════════════');
+      print('🎨 [STEP 2] Updating UI with placeholder...');
+      print('═══════════════════════════════════════════════════════════');
       _snack('✅ Entry marked - PRESENT ✓', success: true);
 
       setState(() {
@@ -1038,6 +1441,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_all[i].id == student.id) {
             for (int j = 0; j < _all[i].subjects.length; j++) {
               if (_all[i].subjects[j]['id'] == subject['id']) {
+                print('✅ [STEP 2] Found subject in state at index [$i][$j]');
                 _all[i].subjects[j]['entry_photo_url'] = 'marking...';  // ✅ Show placeholder
                 _all[i].subjects[j]['entry_photo_at'] = DateTime.now().toIso8601String();
                 break;
@@ -1047,15 +1451,19 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         }
       });
+      print('✅ [STEP 2] UI placeholder updated');
 
       // ✅ BACKGROUND: Upload photo asynchronously (don't await)
+      print('═══════════════════════════════════════════════════════════');
+      print('📤 [STEP 3] Starting background photo upload...');
+      print('═══════════════════════════════════════════════════════════');
       _uploadEntryPhotoInBackground(
         photo: photo,
         student: student,
         subject: subject,
         subjectCode: subjectCode,
         examStudentId: examStudentId,
-        instituteId: instituteId,
+        centreCode: centreCode,
         center: center,
         latitude: latitude,
         longitude: longitude,
@@ -1065,8 +1473,10 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     } catch (e) {
       if (!mounted) return;
+      print('═══════════════════════════════════════════════════════════');
+      print('❌ [ERROR] Entry save error: $e');
+      print('═══════════════════════════════════════════════════════════');
       _snack('Error: $e', success: false);
-      print('❌ Entry save error: $e');
     }
   }
 
@@ -1077,34 +1487,62 @@ class _HomeScreenState extends State<HomeScreen> {
     required Map<String, dynamic> subject,
     required String subjectCode,
     required String examStudentId,
-    required String instituteId,
+    required String centreCode,
     required Map<String, dynamic> center,
     double? latitude,
     double? longitude,
     DateTime? timestamp,
   }) async {
     try {
+      // ✅ Extract seat_no from subject (exam_students row)
+      final seatNo = subject['seat_no']?.toString() ?? student.srNo;
+
+      print('═══════════════════════════════════════════════════════════');
+      print('📸 [BG-UPLOAD] Background upload started');
+      print('   Student: ${student.name} (Seat: $seatNo)');
+      print('   Subject: $subjectCode');
+      print('   Centre Code: $centreCode');
+      print('═══════════════════════════════════════════════════════════');
+
       // ✅ Read and compress photo
       var photoBytes = await photo.readAsBytes();
-      print('📸 Original photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
+      print('📸 [BG-1] Original photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
 
-      if (photoBytes.length > 102400) {
+      if (photoBytes.length > 1048576) {  // ✅ 1MB limit (increased from 100KB)
+        print('⚠️ [BG-1] Photo exceeds 1MB, compressing...');
         photoBytes = await _compressPhotoToUnder100KB(photoBytes);
-        print('📸 Compressed photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
+        print('✅ [BG-1] Compressed photo size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
+      } else {
+        print('✅ [BG-1] Photo size OK (${(photoBytes.length / 1024).toStringAsFixed(2)} KB < 1MB)');
       }
 
       // ✅ Upload to B2
+      print('═══════════════════════════════════════════════════════════');
+      print('📤 [BG-2] Uploading to B2 Storage Service...');
+      print('   centreCode: $centreCode');
+      print('   folderYear: ${DateTime.now().year}');
+      print('   seatNo: $seatNo');
+      print('   subject: $subjectCode');
+      print('═══════════════════════════════════════════════════════════');
+
+      // ✅ Generate timestamp folder for versioning (Unix timestamp in milliseconds)
+      final timestampFolder = DateTime.now().millisecondsSinceEpoch.toString();
+
       final uploadResult = await StorageService.uploadAttendancePhoto(
-        instituteId: instituteId,
+        instituteId: centreCode,  // ✅ Exam centre code (e.g., "4305")
         folderYear: DateTime.now().year.toString(),
-        srNo: student.srNo,
+        srNo: seatNo,  // ✅ Seat number from exam_students table
         subject: subjectCode,
         date: timestamp?.toIso8601String().split('T').first ?? DateTime.now().toIso8601String().split('T').first,
         photoBytes: photoBytes,
         photoType: 'entry',
+        timestamp: timestampFolder,  // ✅ NEW: Add timestamp folder
       );
 
       var photoUrl = uploadResult['url'] ?? photo.path;
+      print('✅ [BG-2] Upload successful!');
+      print('   URL: $photoUrl');
+      print('   Path: ${uploadResult['path']}');
 
       // ✅ Convert proxy URL to direct B2 URL if needed
       if (photoUrl.startsWith('/api/b2-upload')) {
@@ -1112,13 +1550,24 @@ class _HomeScreenState extends State<HomeScreen> {
         final key = uri.queryParameters['key'];
         if (key != null && key.isNotEmpty) {
           photoUrl = 'https://f004.backblazeb2.com/file/attendance-students-photos/$key';
-          print('🔄 Converted proxy URL to direct B2 URL: $photoUrl');
+          print('🔄 [BG-2] Converted proxy URL to direct B2 URL: $photoUrl');
         }
       }
 
-      print('✅ Photo uploaded: $photoUrl');
+      print('═══════════════════════════════════════════════════════════');
+      print('✅ [BG-2] Photo uploaded to B2: $photoUrl');
+      print('═══════════════════════════════════════════════════════════');
 
       // ✅ Save to database
+      print('═══════════════════════════════════════════════════════════');
+      print('💾 [BG-3] Saving to database...');
+      print('   centerId: ${center['id']}');
+      print('   studentId: $examStudentId');
+      print('   photoPath: $photoUrl');
+      print('   subjectCode: $subjectCode');
+      print('   latitude: $latitude, longitude: $longitude');
+      print('═══════════════════════════════════════════════════════════');
+
       final entryService = ExamEntryService();
       final result = await entryService.markSubjectEntry(
         centerId: center['id']!,
@@ -1131,24 +1580,97 @@ class _HomeScreenState extends State<HomeScreen> {
         seatNo: subject['seat_no']?.toString() ?? '',
       );
 
+      print('✅ [BG-3] Database save result: $result');
+
       if (mounted) {
-        // ✅ Update UI with actual photo URL
-        setState(() {
-          for (int i = 0; i < _all.length; i++) {
-            if (_all[i].id == student.id) {
-              for (int j = 0; j < _all[i].subjects.length; j++) {
-                if (_all[i].subjects[j]['id'] == subject['id']) {
-                  _all[i].subjects[j]['entry_photo_url'] = photoUrl;
-                  _all[i].subjects[j]['entry_photo_at'] = DateTime.now().toIso8601String();
+        // ✅ FETCH FRESH from database to ensure we have correct URL
+        print('═══════════════════════════════════════════════════════════');
+        print('📥 [BG-4] Fetching fresh data from database...');
+        print('═══════════════════════════════════════════════════════════');
+
+        try {
+          // Fetch the saved exam_students row to get the actual saved URL
+          final freshData = await supabase
+              .from('exam_students')
+              .select('id, entry_photo_url, entry_photo_at')
+              .eq('id', subject['id'])
+              .maybeSingle();
+
+          if (freshData != null) {
+            final dbPhotoUrl = freshData['entry_photo_url']?.toString() ?? photoUrl;
+            print('✅ [BG-4] Fresh data from DB:');
+            print('   URL: $dbPhotoUrl');
+            print('   At: ${freshData['entry_photo_at']}');
+
+            setState(() {
+              for (int i = 0; i < _all.length; i++) {
+                if (_all[i].id == student.id) {
+                  for (int j = 0; j < _all[i].subjects.length; j++) {
+                    if (_all[i].subjects[j]['id'] == subject['id']) {
+                      print('✅ [BG-4] Updating state with FRESH DB data at index [$i][$j]');
+                      print('   OLD: ${_all[i].subjects[j]['entry_photo_url']}');
+                      print('   NEW: $dbPhotoUrl');
+                      _all[i].subjects[j]['entry_photo_url'] = dbPhotoUrl;
+                      _all[i].subjects[j]['entry_photo_at'] = freshData['entry_photo_at'];
+                      print('✅ [BG-4] State updated successfully');
+                      print('   Thumbnail will now fetch fresh URL: $dbPhotoUrl');
+                      break;
+                    }
+                  }
                   break;
                 }
               }
-              break;
+            });
+
+            // ✅ Force clear image cache for entry photo URL
+            if (mounted && dbPhotoUrl.isNotEmpty) {
+              await Future.delayed(const Duration(milliseconds: 50));
+              // Clear Flutter's image cache
+              imageCache.evict(Uri.parse(dbPhotoUrl));
+              imageCache.clear();
+              imageCache.clearLiveImages();
+              print('🔄 [BG-4] Cleared image cache for: $dbPhotoUrl');
             }
+          } else {
+            print('⚠️ [BG-4] Could not fetch fresh data, using upload result URL');
+            setState(() {
+              for (int i = 0; i < _all.length; i++) {
+                if (_all[i].id == student.id) {
+                  for (int j = 0; j < _all[i].subjects.length; j++) {
+                    if (_all[i].subjects[j]['id'] == subject['id']) {
+                      _all[i].subjects[j]['entry_photo_url'] = photoUrl;
+                      _all[i].subjects[j]['entry_photo_at'] = DateTime.now().toIso8601String();
+                      break;
+                    }
+                  }
+                  break;
+                }
+              }
+            });
           }
-        });
+        } catch (e) {
+          print('❌ [BG-4] Error fetching fresh data: $e');
+          setState(() {
+            for (int i = 0; i < _all.length; i++) {
+              if (_all[i].id == student.id) {
+                for (int j = 0; j < _all[i].subjects.length; j++) {
+                  if (_all[i].subjects[j]['id'] == subject['id']) {
+                    _all[i].subjects[j]['entry_photo_url'] = photoUrl;
+                    _all[i].subjects[j]['entry_photo_at'] = DateTime.now().toIso8601String();
+                    break;
+                  }
+                }
+                break;
+              }
+            }
+          });
+        }
 
         // ✅ AUTO-ENABLE next subject
+        print('═══════════════════════════════════════════════════════════');
+        print('🔄 [BG-5] Auto-enabling next subject...');
+        print('═══════════════════════════════════════════════════════════');
+
         final sorted = _sortSubjectsByExamOrder(student.subjects.cast<Map<String, dynamic>>());
         final currentIndex = sorted.indexWhere((s) => s['subject_name'] == subjectCode);
 
@@ -1162,20 +1684,29 @@ class _HomeScreenState extends State<HomeScreen> {
                   .from('exam_students')
                   .update({'is_enabled': true})
                   .eq('id', nextSubjectId);
-              print('✅ Next subject auto-enabled: $nextSubjectId');
+              print('✅ [BG-5] Next subject auto-enabled: $nextSubjectId');
             } catch (e) {
-              print('⚠️ Could not auto-enable next subject: $e');
+              print('⚠️ [BG-5] Could not auto-enable next subject: $e');
             }
           }
+        } else {
+          print('ℹ️ [BG-5] No next subject to enable (current: $currentIndex of ${sorted.length})');
         }
       }
 
       // ✅ Reload in background (don't await)
+      print('═══════════════════════════════════════════════════════════');
+      print('📱 [BG-6] Reloading data in 500ms...');
+      print('═══════════════════════════════════════════════════════════');
       await Future.delayed(const Duration(milliseconds: 500));
       _load();
+      print('✅ [BG-6] Data reload triggered');
+
     } catch (e) {
       if (!mounted) return;
-      print('❌ Background upload error: $e');
+      print('═══════════════════════════════════════════════════════════');
+      print('❌ [BG-ERROR] Background upload error: $e');
+      print('═══════════════════════════════════════════════════════════');
     }
   }
 
@@ -1199,14 +1730,14 @@ class _HomeScreenState extends State<HomeScreen> {
       int quality = 90;
       Uint8List compressed = Uint8List.fromList(img.encodeJpg(image, quality: quality));
 
-      // Keep reducing quality until under 100KB
-      while (compressed.length > 102400 && quality > 30) {
+      // Keep reducing quality until under 1MB
+      while (compressed.length > 1048576 && quality > 30) {
         quality -= 10;
         compressed = Uint8List.fromList(img.encodeJpg(image, quality: quality));
       }
 
-      // If still over 100KB, resize image
-      if (compressed.length > 102400) {
+      // If still over 1MB, resize image
+      if (compressed.length > 1048576) {
         final resized = img.copyResize(image,
             width: (image.width * 0.8).toInt(),
             height: (image.height * 0.8).toInt());

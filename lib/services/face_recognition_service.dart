@@ -205,7 +205,7 @@ class FaceRecognitionService {
   static Future<PreparedFaceRegistrationOnePhoto?> prepareFaceRegistrationOnePhoto(
     String imagePath,
     String instituteId,
-    String rollNumber,
+    String seatNo,
     String studentId,
   ) async {
     final workPath = await _normalizeImage(imagePath);
@@ -303,7 +303,7 @@ class FaceRecognitionService {
   static Future<PreparedFaceRegistrationOnePhoto?> prepareFacePhotoChangeOnePhoto(
     String imagePath,
     String instituteId,
-    String rollNumber,
+    String seatNo,
     String studentId,
   ) async {
     final workPath = await _normalizeImage(imagePath);

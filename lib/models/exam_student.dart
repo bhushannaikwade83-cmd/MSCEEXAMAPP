@@ -2,7 +2,7 @@
 class ExamStudent {
   ExamStudent({
     required this.id,
-    required this.rollNumber,
+    required this.seatNo,
     required this.name,
     required this.examTime,
     this.passportPhotoUrl,
@@ -11,7 +11,7 @@ class ExamStudent {
   });
 
   final String id;
-  final String rollNumber;
+  final String seatNo;
   final String name;
   final DateTime examTime;
   final String? passportPhotoUrl;
@@ -47,7 +47,7 @@ class ExamStudent {
     // subjects is merged from students.subjects / students.subject.
     return ExamStudent(
       id: row['id'] as String,
-      rollNumber: seatNo.isNotEmpty ? seatNo : rollNumberFallback,
+      seatNo: seatNo.isNotEmpty ? seatNo : rollNumberFallback,
       name: row['student_name']?.toString() ?? '',
       examTime: examTime,
       passportPhotoUrl: row['photo_url']?.toString(),

@@ -1,10 +1,10 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
-import 'package:crypto/crypto.dart';
+import 'package:crypto/crypto.dart' show sha1;
 
 import '../core/app_db.dart';
 import '../core/supabase_maps.dart';
@@ -108,20 +108,29 @@ class B2BStorageService {
   static String generatePhotoPath({
     required String instituteId,
     required String folderYear,
-    required String rollNumber,
+    required String seatNo,
     required String subject,
     required String date,
     String? photoType,
+    String? timestamp,  // ✅ NEW: timestamp for uniqueness
   }) {
     final cleanSubject = subject
         .replaceAll(' ', '_')
         .replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '')
         .toLowerCase();
-    final cleanRollNumber = rollNumber.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    final cleanSeatNo = seatNo.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
     final fileName = photoType != null && (photoType == 'entry' || photoType == 'exit')
-        ? '$photoType.jpg'
+        ? '$photoType.jpg'  // ✅ entry.jpg or exit.jpg
         : 'photo.jpg';
-    return '$instituteId/$folderYear/$cleanRollNumber/$cleanSubject/$date/$fileName';
+
+    // ✅ NEW: Include timestamp folder for versioning
+    // Format: EXAM_CENTER/YEAR/SEAT_NO/SUBJECT/DATE/TIMESTAMP/entry.jpg
+    if (timestamp != null && timestamp.isNotEmpty) {
+      return '$instituteId/$folderYear/$cleanSeatNo/$cleanSubject/$date/$timestamp/$fileName';
+    }
+
+    // ✅ Fallback without timestamp
+    return '$instituteId/$folderYear/$cleanSeatNo/$cleanSubject/$date/$fileName';
   }
 
   static Future<Map<String, dynamic>> _edgeInvoke(String action, Map<String, dynamic> body) async {
@@ -138,77 +147,39 @@ class B2BStorageService {
     throw Exception('Invalid response from b2-storage-proxy');
   }
 
-  /// Upload a generic file to B2 via Vercel API and return its proxy URL.
-  ///
-  /// This is used by registration and verification flows that already know
-  /// the exact storage path they want to write.
-  static Future<String> uploadFile(
-    String objectPath,
-    List<int> fileBytes, {
-    String contentType = 'image/jpeg',
-  }) async {
-    try {
-      final trimmedPath = objectPath.trim();
-      if (trimmedPath.isEmpty) {
-        throw Exception('Object path is required');
-      }
-      if (fileBytes.isEmpty) {
-        throw Exception('File bytes are empty');
-      }
-
-      if (kDebugMode) debugPrint('📤 Uploading to B2 via Vercel API: $trimmedPath');
-
-      // Upload via Vercel API endpoint
-      final uploadResponse = await http.post(
-        Uri.parse('https://msceexamapp.vercel.app/api/b2-upload'),
-        headers: {
-          'Content-Type': contentType,
-          'X-File-Name': trimmedPath,
-        },
-        body: fileBytes,
-      ).timeout(
-        const Duration(seconds: 60),
-        onTimeout: () => throw Exception('B2 upload timeout (60s)'),
-      );
-
-      if (uploadResponse.statusCode != 200) {
-        if (kDebugMode) debugPrint('❌ B2 upload error: ${uploadResponse.statusCode}');
-        throw Exception('Upload failed: ${uploadResponse.statusCode} ${uploadResponse.body}');
-      }
-
-      final uploadJson = jsonDecode(uploadResponse.body) as Map<String, dynamic>;
-      final proxyUrl = (uploadJson['url'] ?? '').toString();
-
-      if (proxyUrl.isEmpty) {
-        throw Exception('No proxy URL returned from upload');
-      }
-
-      if (kDebugMode) debugPrint('✅ B2 upload success: $proxyUrl');
-
-      return proxyUrl;
-    } catch (e) {
-      if (kDebugMode) debugPrint('❌ uploadFile failed: $e');
-      rethrow;
-    }
-  }
+  // ❌ REMOVED: uploadFile() - Web-only function (Vercel API)
+  // MOBILE-ONLY APP: Use uploadAttendancePhoto() or edge functions directly
 
   static Future<Map<String, String>> uploadAttendancePhoto({
     required String instituteId,
     required String folderYear,
-    required String rollNumber,
+    required String seatNo,
     required String subject,
     required String date,
     required List<int> photoBytes,
     String? photoType,
+    String? timestamp,  // ✅ NEW: timestamp for versioning
   }) async {
     try {
+      if (kDebugMode) {
+        debugPrint('═══════════════════════════════════════════════════════════');
+        debugPrint('📤 [STORAGE-1] uploadAttendancePhoto called');
+        debugPrint('   instituteId: $instituteId');
+        debugPrint('   folderYear: $folderYear');
+        debugPrint('   seatNo: $seatNo');
+        debugPrint('   subject: $subject');
+        debugPrint('   date: $date');
+        debugPrint('   photoType: $photoType');
+        debugPrint('═══════════════════════════════════════════════════════════');
+      }
+
       final instituteIdError = ValidationService.validateInstituteId(instituteId);
       if (instituteIdError != null) throw Exception('Invalid institute ID: $instituteIdError');
-      final rollNumberError = ValidationService.validateRollNumber(rollNumber);
-      if (rollNumberError != null) throw Exception('Invalid roll number: $rollNumberError');
+      final seatNoError = ValidationService.validateRollNumber(seatNo);
+      if (seatNoError != null) throw Exception('Invalid seat number: $seatNoError');
       final subjectError = ValidationService.validateSubject(subject);
       if (subjectError != null) throw Exception('Invalid subject: $subjectError');
-      final fileSizeError = ValidationService.validateFileSize(photoBytes.length, maxSizeKB: 100);
+      final fileSizeError = ValidationService.validateFileSize(photoBytes.length, maxSizeKB: 1024);  // ✅ 1MB limit
       if (fileSizeError != null) throw Exception('File size validation failed: $fileSizeError');
       // Accept both date format (YYYY-MM-DD) and timestamp (milliseconds)
       if (!RegExp(r'^\d{4}-\d{2}-\d{2}$|^\d{13,}$').hasMatch(date)) {
@@ -216,59 +187,130 @@ class B2BStorageService {
       }
       if (folderYear.isEmpty || folderYear.length > 50) throw Exception('Invalid folder year');
 
+      if (kDebugMode) debugPrint('✅ [STORAGE-1] Validation passed');
+
       final storagePath = generatePhotoPath(
         instituteId: instituteId,
         folderYear: folderYear,
-        rollNumber: rollNumber,
+        seatNo: seatNo,
         subject: subject,
         date: date,
         photoType: photoType,
+        timestamp: timestamp,  // ✅ NEW: Pass timestamp
       );
 
-      if (kDebugMode) debugPrint('📤 Uploading attendance photo via Vercel API: $storagePath');
+      if (kDebugMode) debugPrint('═══════════════════════════════════════════════════════════');
+      if (kDebugMode) debugPrint('📤 [STORAGE-2] Generated storage path: $storagePath');
+      if (kDebugMode) debugPrint('═══════════════════════════════════════════════════════════');
 
-      // Upload via Vercel API endpoint
-      final uploadResponse = await http.post(
-        Uri.parse('https://msceexamapp.vercel.app/api/b2-upload'),
-        headers: {
-          'Content-Type': 'image/jpeg',
-          'X-File-Name': storagePath,
-        },
-        body: photoBytes,
-      );
-
-      if (uploadResponse.statusCode != 200) {
-        throw Exception('Upload failed: ${uploadResponse.statusCode} ${uploadResponse.body}');
+      // ✅ Get upload URL from edge function
+      if (kDebugMode) {
+        debugPrint('═══════════════════════════════════════════════════════════');
+        debugPrint('📤 [STORAGE-3] Getting upload URL from edge function...');
+        debugPrint('   File size: ${(photoBytes.length / 1024).toStringAsFixed(2)} KB');
+        debugPrint('═══════════════════════════════════════════════════════════');
       }
 
-      final uploadJson = jsonDecode(uploadResponse.body) as Map<String, dynamic>;
-      final proxyUrl = (uploadJson['url'] ?? '').toString();
-      final directB2Url = (uploadJson['directUrl'] ?? '').toString();  // ✅ Direct B2 URL from API
-      final fileId = (uploadJson['fileId'] ?? '').toString();
+      final uploadUrlResp = await _edgeInvoke('upload_url', {});
+      final uploadUrl = (uploadUrlResp['uploadUrl'] ?? '').toString();
+      final uploadAuthToken = (uploadUrlResp['uploadAuthToken'] ?? '').toString();
+      final retrievedBucketName = (uploadUrlResp['bucketName'] ?? bucketName).toString();
 
-      if (proxyUrl.isEmpty) {
-        throw Exception('No proxy URL returned from upload');
+      if (uploadUrl.isEmpty || uploadAuthToken.isEmpty) {
+        throw Exception('Failed to get upload URL from edge function');
       }
 
-      // ✅ Web: Proxy URL (Vercel API) | Mobile: Direct B2 URL
-      final String urlToStore;
-      final bool isWeb = kIsWeb;
+      if (kDebugMode) debugPrint('✅ [STORAGE-3] Got upload URL, now uploading to B2...');
 
-      if (isWeb) {
-        urlToStore = proxyUrl;  // ✅ WEB: Proxy URL for Vercel API
-      } else {
-        urlToStore = directB2Url.isNotEmpty ? directB2Url : proxyUrl;  // ✅ MOBILE: Direct B2 URL
+      // ✅ Upload to B2 with retry logic for temporary failures
+      final sha1Hash = sha1.convert(photoBytes).toString();
+      http.Response? b2UploadResponse;
+      int maxRetries = 3;
+      int retryCount = 0;
+
+      while (retryCount < maxRetries) {
+        try {
+          b2UploadResponse = await http.post(
+            Uri.parse(uploadUrl),
+            headers: {
+              'Authorization': uploadAuthToken,
+              'X-Bz-File-Name': storagePath,
+              'Content-Type': 'image/jpeg',
+              'X-Bz-Content-Sha1': sha1Hash,
+            },
+            body: photoBytes,
+          ).timeout(
+            const Duration(seconds: 60),
+            onTimeout: () => throw Exception('B2 upload timeout (60s)'),
+          );
+
+          if (kDebugMode) debugPrint('✅ [STORAGE-3] B2 upload response: ${b2UploadResponse.statusCode}');
+
+          // ✅ Success
+          if (b2UploadResponse.statusCode == 200) {
+            break;
+          }
+
+          // ✅ Retry on 503 (Service Unavailable) or 429 (Too Many Requests)
+          if (b2UploadResponse.statusCode == 503 || b2UploadResponse.statusCode == 429) {
+            retryCount++;
+            if (retryCount < maxRetries) {
+              final waitMs = 500 * (1 << retryCount); // Exponential backoff: 1s, 2s, 4s
+              if (kDebugMode) {
+                debugPrint('⏳ [STORAGE-3] B2 temporarily unavailable (${b2UploadResponse.statusCode}), retry $retryCount/$maxRetries in ${waitMs}ms...');
+              }
+              await Future.delayed(Duration(milliseconds: waitMs));
+              continue; // Retry
+            }
+          }
+
+          // ✅ Non-retryable error
+          if (kDebugMode) debugPrint('❌ [STORAGE-3] B2 upload error: ${b2UploadResponse.statusCode}');
+          if (kDebugMode) debugPrint('   Response body: ${b2UploadResponse.body}');
+          throw Exception('B2 upload failed: ${b2UploadResponse.statusCode}');
+        } catch (e) {
+          retryCount++;
+          if (retryCount < maxRetries) {
+            if (kDebugMode) debugPrint('❌ [STORAGE-3] Upload attempt $retryCount failed: $e, retrying...');
+            await Future.delayed(Duration(milliseconds: 500 * (1 << retryCount)));
+          } else {
+            rethrow;
+          }
+        }
       }
+
+      if (b2UploadResponse == null) {
+        throw Exception('B2 upload failed after $maxRetries retries');
+      }
+
+      if (b2UploadResponse.statusCode != 200) {
+        if (kDebugMode) debugPrint('❌ [STORAGE-3] B2 upload failed after retries: ${b2UploadResponse.statusCode}');
+        throw Exception('B2 upload failed: ${b2UploadResponse.statusCode}');
+      }
+
+      final b2Json = jsonDecode(b2UploadResponse.body) as Map<String, dynamic>;
+      final fileId = (b2Json['fileId'] ?? '').toString();
+
+      if (kDebugMode) debugPrint('✅ [STORAGE-3] fileId extracted: $fileId');
+
+      if (fileId.isEmpty) {
+        throw Exception('Upload failed - no fileId returned from B2');
+      }
+
+      // ✅ Construct direct B2 URL
+      final String urlToStore = 'https://f004.backblazeb2.com/file/$retrievedBucketName/$storagePath';
 
       if (kDebugMode) {
-        debugPrint('✅ Upload complete (Platform: ${isWeb ? 'WEB' : 'MOBILE'}):');
-        debugPrint('   Proxy URL (web): $proxyUrl');
-        debugPrint('   Direct B2 URL (mobile): $directB2Url');
-        debugPrint('   Storing: $urlToStore');
+        debugPrint('═══════════════════════════════════════════════════════════');
+        debugPrint('✅ [STORAGE-4] Upload COMPLETE (MOBILE ONLY)');
+        debugPrint('   Storage path: $storagePath');
+        debugPrint('   File ID: $fileId');
+        debugPrint('   Final URL: $urlToStore');
+        debugPrint('═══════════════════════════════════════════════════════════');
       }
 
       return {
-        'url': urlToStore,  // ✅ Platform-specific: Proxy for web, Direct B2 for mobile
+        'url': urlToStore,  // ✅ MOBILE: Direct B2 URL (no Vercel proxy)
         'path': storagePath,
         'bucket': bucketName,
         'fileId': fileId,
@@ -349,8 +391,9 @@ class B2BStorageService {
       if (authToken.isEmpty || downloadUrl.isEmpty) {
         throw Exception('Failed to obtain secure download token');
       }
-      final encodedPath = Uri.encodeComponent(objectPath);
-      final photoUrl = '$downloadUrl/file/$edgeBucketName/$encodedPath?Authorization=$authToken';
+      // ✅ FIXED: Don't encode path - B2 direct URL needs plain path with slashes
+      // Example: https://f004.backblazeb2.com/file/bucket-name/path/to/file.jpg
+      final photoUrl = '$downloadUrl/file/$edgeBucketName/$objectPath?Authorization=$authToken';
       final expiresAt = now.add(const Duration(minutes: 30));  // Cache for 30 minutes
 
       // ✅ Step 4: Cache URL in both memory and database (30 minutes validity)

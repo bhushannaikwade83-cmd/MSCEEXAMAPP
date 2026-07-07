@@ -125,7 +125,7 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
             style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
           ),
           const SizedBox(height: 20),
-          Text(s.rollNumber, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(s.seatNo, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
           Center(
             child: Container(

@@ -290,9 +290,9 @@ class MsceStudentService {
     // Load from exam_students table (same as QR scan)
     final examStudentsRows = await supabase
         .from('exam_students')
-        .select('exam_student_id, student_name, seat_no, photo_url, subject_name, centre_code')
+        .select('exam_student_id, student_name, seat_no, sr_no, photo_url, subject_name, centre_code')  // ✅ Removed roll_number (always null)
         .eq('centre_code', centerCode)
-        .order('student_name');
+        .order('seat_no', ascending: true);  // ✅ Sort by seat_no ascending (not by name)
 
     // Group by student to get unique students
     final Map<String, Map<String, dynamic>> studentMap = {};
@@ -511,12 +511,15 @@ class MsceStudentService {
         query = query.eq('centre_id', centerId);
       }
       if (search.isNotEmpty) {
-        query = query.ilike('student_name', '%${search.trim()}%');
+        // ✅ Search by: student_name OR seat_no OR sr_no
+        final searchTerm = search.trim();
+        query = query.or(
+          'student_name.ilike.%$searchTerm%,seat_no.ilike.%$searchTerm%,sr_no.ilike.%$searchTerm%'
+        );
       }
 
-      // ✅ Order by seat_no for consistent data (photo linked to seat_no)
+      // ✅ Order by seat_no ascending (exam hall seat order, not by name)
       final rows = await query.order('seat_no', ascending: true);
-      print('📊 DEBUG: Got ${rows.length} exam_students rows');
 
       // ✅ Group ALL subjects by STUDENT NAME (not exam_student_id - same student may have different IDs per subject)
       final studentMap = <String, List<Map<String, dynamic>>>{};
@@ -561,11 +564,17 @@ class MsceStudentService {
         final nameParts = fullName.trim().split(RegExp(r'\s+'));
         final lastName = nameParts.length > 1 ? nameParts.last : '';
 
+        final seatNo = firstRow['seat_no']?.toString() ?? '';
+        final srNo = firstRow['sr_no']?.toString() ?? '';  // ✅ sr_no from exam_students table
+
+        // ✅ Use sr_no if available, else fallback to seat_no
+        final displaySrNo = srNo.isNotEmpty ? srNo : seatNo;
+
         students.add(MsceStudent(
           id: examStudentId,
           name: fullName,
           lastName: lastName,  // ✅ Extract surname for sorting
-          srNo: firstRow['sr_no']?.toString() ?? '',
+          srNo: displaySrNo,  // ✅ Use sr_no (priority), else roll_number, else seat_no
           photoUrl: firstRow['photo_url']?.toString() ?? '',
           hasFaceEmbedding: firstRow['face_embedding'] != null,
           entryMarked: subjectRows.any((r) => r['entry_photo_url'] != null),
@@ -608,44 +617,40 @@ class MsceStudentService {
       }
       print('📸 Fetched thumbnail photos for ${photoMap.length} students from exam_students.photo_url');
 
-      // Sort by surname (ascending), then by name
-      students.sort((a, b) {
-        final lc = a.lastName.toLowerCase().compareTo(b.lastName.toLowerCase());
-        if (lc != 0) return lc;
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      });
+      // ✅ DO NOT SORT BY SURNAME - Keep seat_no order from database!
+      // Students already come sorted by seat_no from: query.order('seat_no', ascending: true)
 
-      // Auto-assign SR No based on sorted position (001, 002, 003, ...)
+      // Update photos only - do NOT overwrite srNo!
       for (var i = 0; i < students.length; i++) {
-        final autoSrNo = (i + 1).toString().padLeft(3, '0');
         // ✅ Use ONLY photo from exam_students.photo_url (already proxy URL)
         // Never use students.photoUrl - it may trigger unnecessary API calls
         final finalPhotoUrl = photoMap[students[i].id] ?? '';  // Empty if no photo in exam_students
 
-        students[i] = MsceStudent(
-          id: students[i].id,
-          name: students[i].name,
-          lastName: students[i].lastName,
-          srNo: autoSrNo,  // ✅ Use auto-numbered SR No
-          photoUrl: finalPhotoUrl,  // ✅ Use photo from students table
-          photoVersion: students[i].photoVersion,
-          hasFaceEmbedding: students[i].hasFaceEmbedding,
-          instituteId: students[i].instituteId,
-          userId: students[i].userId,
-          firstName: students[i].firstName,
-          middleName: students[i].middleName,
-          year: students[i].year,
-          subject: students[i].subject,
-          examRollNumber: students[i].examRollNumber,
-          entryMarked: students[i].entryMarked,
-          entryPhotoUrl: students[i].entryPhotoUrl,
-          entryMarkedAt: students[i].entryMarkedAt,
-          faceMatchScore: students[i].faceMatchScore,
-          subjects: students[i].subjects,
-        );
+        if (finalPhotoUrl.isNotEmpty && finalPhotoUrl != students[i].photoUrl) {
+          students[i] = MsceStudent(
+            id: students[i].id,
+            name: students[i].name,
+            lastName: students[i].lastName,
+            srNo: students[i].srNo,  // ✅ KEEP sr_no from exam_students (NOT auto-numbered!)
+            photoUrl: finalPhotoUrl,  // ✅ Use photo from exam_students.photo_url
+            photoVersion: students[i].photoVersion,
+            hasFaceEmbedding: students[i].hasFaceEmbedding,
+            instituteId: students[i].instituteId,
+            userId: students[i].userId,
+            firstName: students[i].firstName,
+            middleName: students[i].middleName,
+            year: students[i].year,
+            subject: students[i].subject,
+            examRollNumber: students[i].examRollNumber,
+            entryMarked: students[i].entryMarked,
+            entryPhotoUrl: students[i].entryPhotoUrl,
+            entryMarkedAt: students[i].entryMarkedAt,
+            faceMatchScore: students[i].faceMatchScore,
+            subjects: students[i].subjects,
+          );
+        }
       }
 
-      print('✅ DEBUG: Returning ${students.length} unique students (sorted by surname, auto-numbered)');
       return students;
     } catch (e) {
       print('❌ DEBUG ERROR: $e');

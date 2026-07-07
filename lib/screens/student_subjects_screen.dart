@@ -15,6 +15,8 @@ import '../core/supabase_client.dart';
 import '../models/exam_student.dart';
 import '../presentation/widgets/secure_network_image.dart';
 import '../services/storage_service.dart';
+import '../services/session_service.dart';
+import '../services/cache_clear_service.dart';
 import 'exam_subject_camera_screen.dart';
 
 /// Updated StudentSubjectsScreen
@@ -42,18 +44,44 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
 
   /// Fetch all exam_students rows for this student
   /// Groups by subject with seat, time, batch info
+  /// ✅ SORTED by exam_date + start_time (earliest first)
+  /// ✅ FETCHES by student_name (not exam_student_id) to get ALL subjects
   Future<void> _loadSubjectDetails() async {
     try {
+      // ✅ First get centre_code from session
+      final center = await SessionService.getCenter();
+      final centreCode = center?['code']?.toString() ?? '';
+
+      if (centreCode.isEmpty && !mounted) return;
+
       // Fetch all subjects for this student from exam_students table
+      // Use student_name to get ALL subjects (exam_student_id is per-subject)
       final rows = await supabase
           .from('exam_students')
           .select()
-          .eq('exam_student_id', widget.student.id);
+          .eq('student_name', widget.student.name)
+          .eq('centre_code', centreCode);
 
       if (!mounted) return;
 
+      print('✅ StudentSubjectsScreen: Loaded ${rows.length} subjects for ${widget.student.name}');
+
+      // ✅ Sort by exam_date + start_time (earliest first)
+      final sortedRows = List<Map<String, dynamic>>.from(rows as List);
+      sortedRows.sort((a, b) {
+        final dateA = a['exam_date']?.toString() ?? '';
+        final dateB = b['exam_date']?.toString() ?? '';
+        final timeA = a['start_time']?.toString() ?? '';
+        final timeB = b['start_time']?.toString() ?? '';
+
+        final parsedA = DateTime.tryParse('${dateA}T${timeA.split('+').first.split('-').first.trim()}') ?? DateTime.now();
+        final parsedB = DateTime.tryParse('${dateB}T${timeB.split('+').first.split('-').first.trim()}') ?? DateTime.now();
+
+        return parsedA.compareTo(parsedB);
+      });
+
       setState(() {
-        _subjectDetails = List<Map<String, dynamic>>.from(rows as List);
+        _subjectDetails = sortedRows;
         _loading = false;
       });
     } catch (e) {
@@ -66,6 +94,9 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
   }
 
   Future<void> _onEntryTap(Map<String, dynamic> subject) async {
+    // ✅ Clear cache before marking entry
+    await CacheClearService.clearAllCaches();
+
     final examStudentId = subject['id']?.toString() ?? '';
     // ✅ Use subject_name (primary) or subject_code (fallback)
     final subjectName = subject['subject_name']?.toString() ??
@@ -151,8 +182,19 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
       try {
         debugPrint('📤 Uploading to B2 via StorageService...');
 
+        // ✅ CRITICAL: Use centre_code from SESSION, NOT from database
+        // (Database column might be mislabeled - use the code we already validated)
+        final center = await SessionService.getCenter();
+        final centreCode = center?['code']?.toString() ?? '';
+
+        if (centreCode.isEmpty) {
+          throw Exception('Centre code not found in session');
+        }
+
+        debugPrint('🔍 DEBUG: Using centre_code from session=$centreCode for upload path');
+
         final uploadResult = await StorageService.uploadAttendancePhoto(
-          instituteId: subject['institute_id']?.toString() ?? subject['centre_id']?.toString() ?? '',
+          instituteId: centreCode,  // ✅ ONLY centre_code - no fallback to UUID!
           folderYear: DateTime.now().year.toString(),
           srNo: seatNo,
           subject: subjectName,
@@ -160,6 +202,9 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
           photoBytes: photoBytes,
           photoType: 'entry',
         );
+
+        debugPrint('✅ Upload Result: ${uploadResult['url']}');
+        debugPrint('   Seat: $seatNo | Subject: $subjectName');
 
         photoUrl = uploadResult['url'] ?? '';
         if (photoUrl.isEmpty) {
@@ -183,9 +228,12 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
 
       debugPrint('✅ Photo uploaded successfully: $photoUrl');
 
-      // ✅ CONSISTENT: Update using subject_name + exam_student_id (SAME as HomeScreen)
-      // This ensures both flows save to the exact same row
+      // ✅ Update using 'id' field (PK of exam_students table) - THIS IS UNIQUE
+      // This ensures each subject gets its own row updated correctly
       // ✅ IST timezone (NOT UTC) - local time
+
+      debugPrint('🔍 DEBUG Update: examStudentId=$examStudentId, subject=$subjectName, photoUrl=$photoUrl');
+
       await supabase
           .from('exam_students')
           .update({
@@ -194,13 +242,12 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
             'entry_photo_at': DateTime.now().toIso8601String(),  // ✅ Photo capture time in IST
             'entry_latitude': latitude,  // ✅ GPS Latitude
             'entry_longitude': longitude,  // ✅ GPS Longitude
-            'is_enabled': true,  // ✅ Mark as enabled (matching HomeScreen)
+            'is_enabled': true,  // ✅ Mark as enabled
           })
-          .eq('exam_student_id', widget.student.id)
-          .eq('subject_name', subjectName);
+          .eq('id', examStudentId);  // ✅ Use 'id' (primary key) - unique per subject
 
       if (kDebugMode) {
-        debugPrint('✅ QR entry saved (Seat: $seatNo verified): student=${widget.student.id}, subject=$subjectName, lat=$latitude, lng=$longitude');
+        debugPrint('✅ QR entry saved: id=$examStudentId, subject=$subjectName, photoUrl=$photoUrl');
       }
 
       if (!mounted) return;
@@ -230,6 +277,14 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
                   .update({'is_enabled': true})
                   .eq('id', nextSubjectId);
               debugPrint('✅ Next subject auto-enabled: $nextSubjectId');
+
+              // ✅ UPDATE UI IMMEDIATELY - setState
+              if (mounted) {
+                setState(() {
+                  _subjectDetails[currentIdx + 1]['is_enabled'] = true;
+                });
+                debugPrint('✅ UI Updated - Next subject now enabled');
+              }
             } catch (e) {
               debugPrint('⚠️ Could not auto-enable next subject: $e');
             }
@@ -385,6 +440,7 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
   Widget _buildSubjectRow(Map<String, dynamic> subject, bool showDivider, bool isEnabled) {
     final subjectName = subject['subject_name']?.toString() ?? subject['subject_code']?.toString() ?? '—';
     final seatNo = subject['seat_no']?.toString() ?? '—';
+    final srNo = subject['sr_no']?.toString() ?? '—';  // ✅ Get SR NO from database
     final examDate = subject['exam_date']?.toString() ?? '—';
     final startTime = subject['start_time']?.toString() ?? '—';
     final batch = subject['batch']?.toString() ?? '—';
@@ -458,13 +514,23 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
               ],
             ),
             SizedBox(height: 8.h),
-            // Details Row 1: Seat & Batch
+            // Details Row 1: Seat, SR NO & Batch
             Row(
               children: [
                 Icon(Icons.event_seat, size: 14, color: AppTheme.textGray),
                 SizedBox(width: 4.w),
                 Text('Seat: $seatNo', style: TextStyle(fontSize: 11.sp, color: AppTheme.textGray)),
                 SizedBox(width: 12.w),
+                // ✅ SR NO from database
+                Icon(Icons.assignment, size: 14, color: AppTheme.textGray),
+                SizedBox(width: 4.w),
+                Text('SR: $srNo', style: TextStyle(fontSize: 11.sp, color: AppTheme.textGray)),
+              ],
+            ),
+            SizedBox(height: 6.h),
+            // Details Row 1b: Batch
+            Row(
+              children: [
                 Icon(Icons.groups, size: 14, color: AppTheme.textGray),
                 SizedBox(width: 4.w),
                 Text('Batch: $batch', style: TextStyle(fontSize: 11.sp, color: AppTheme.textGray)),
@@ -490,9 +556,11 @@ class _StudentSubjectsScreenState extends State<StudentSubjectsScreen> {
                 borderRadius: BorderRadius.circular(8),
                 child: SizedBox(
                   width: double.infinity,
-                  height: 200.h,  // ✅ Same as HomeScreen (full width × 200h)
+                  height: 300.h,  // ✅ Increased for better visibility
                   child: SecureNetworkImage(
-                    cacheKey: 'entry_${subject['id']}',
+                    // ✅ ALWAYS FRESH: Disable cache for entry photos
+                    cachePhotos: false,
+                    cacheKey: 'entry_${subject['id']}_${subject['entry_photo_url']?.hashCode ?? ''}',
                     imageUrl: subject['entry_photo_url'],
                     fit: BoxFit.cover,
                   ),

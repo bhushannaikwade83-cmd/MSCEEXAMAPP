@@ -123,6 +123,7 @@ class _StudentCard extends StatelessWidget {
                 child: student.passportPhotoUrl != null && student.passportPhotoUrl!.isNotEmpty
                     ? CachedNetworkImage(
                         imageUrl: student.passportPhotoUrl!,
+                        cacheKey: student.id ?? student.seatNo,  // ✅ Unique key per student
                         fit: BoxFit.cover,
                         placeholder: (_, _) =>
                             const Center(child: CircularProgressIndicator(strokeWidth: 2)),
@@ -143,7 +144,7 @@ class _StudentCard extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                   Text(
-                    student.rollNumber,
+                    student.seatNo,
                     style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
                   ),
                   const SizedBox(height: 4),
