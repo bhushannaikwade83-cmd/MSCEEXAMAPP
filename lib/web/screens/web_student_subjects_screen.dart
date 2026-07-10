@@ -23,7 +23,7 @@ import 'web_camera_dialog.dart';
 class WebStudentSubjectsScreen extends StatefulWidget {
   const WebStudentSubjectsScreen({super.key, required this.student});
 
-  final ExamStudent student;
+  final dynamic student;  // Can be ExamStudent or MsceStudent
 
   @override
   State<WebStudentSubjectsScreen> createState() => _WebStudentSubjectsScreenState();
@@ -51,16 +51,18 @@ class _WebStudentSubjectsScreenState extends State<WebStudentSubjectsScreen> {
 
       if (centreCode.isEmpty && !mounted) return;
 
+      final studentName = widget.student.name ?? '';
+
       // Fetch all subjects for this student from exam_students table
       final rows = await supabase
           .from('exam_students')
           .select()
-          .eq('student_name', widget.student.name)
+          .eq('student_name', studentName)
           .eq('centre_code', centreCode);
 
       if (!mounted) return;
 
-      print('✅ WebStudentSubjectsScreen: Loaded ${rows.length} subjects for ${widget.student.name}');
+      print('✅ WebStudentSubjectsScreen: Loaded ${rows.length} subjects for $studentName');
 
       // ✅ Sort by exam_date + start_time (earliest first)
       final sortedRows = List<Map<String, dynamic>>.from(rows as List);
@@ -329,7 +331,20 @@ class _WebStudentSubjectsScreenState extends State<WebStudentSubjectsScreen> {
   }
 
   Widget _buildStudentHeader() {
-    final hasPhoto = widget.student.passportPhotoUrl != null && widget.student.passportPhotoUrl!.isNotEmpty;
+    final studentName = widget.student.name ?? 'Unknown';
+    final studentId = widget.student.id ?? '';
+
+    // Support both ExamStudent and MsceStudent
+    String? photoUrl;
+    if (widget.student is ExamStudent) {
+      photoUrl = (widget.student as ExamStudent).passportPhotoUrl;
+    } else {
+      // MsceStudent
+      photoUrl = widget.student.photoUrl;
+    }
+
+    final hasPhoto = photoUrl != null && photoUrl.isNotEmpty;
+
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(16.w),
@@ -338,7 +353,7 @@ class _WebStudentSubjectsScreenState extends State<WebStudentSubjectsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.student.name,
+            studentName,
             style: TextStyle(
               fontSize: 18.sp,
               fontWeight: FontWeight.bold,
@@ -357,8 +372,8 @@ class _WebStudentSubjectsScreenState extends State<WebStudentSubjectsScreen> {
                   ? SecureNetworkImage(
                       // ✅ Always fetch fresh profile photo (no caching)
                       cachePhotos: false,
-                      cacheKey: 'student_face_${widget.student.id}',
-                      imageUrl: widget.student.passportPhotoUrl!,
+                      cacheKey: 'student_face_$studentId',
+                      imageUrl: photoUrl!,
                       width: 110,
                       height: 140,
                       fit: BoxFit.cover,
@@ -445,6 +460,30 @@ class _WebStudentSubjectsScreenState extends State<WebStudentSubjectsScreen> {
               ],
             ),
             SizedBox(height: 10.h),
+            // ✅ Entry Button (if NOT marked)
+            if (!isMarked)
+              SizedBox(
+                width: double.infinity,
+                height: 44.h,
+                child: ElevatedButton.icon(
+                  onPressed: () => _onEntryTap(subject),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryBlue,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  icon: const Icon(Icons.camera_alt, size: 18),
+                  label: Text(
+                    'Mark Entry',
+                    style: TextStyle(
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
             // ✅ Entry Photo Box (if marked)
             if (isMarked && subject['entry_photo_url'] != null)
               ClipRRect(
@@ -461,7 +500,7 @@ class _WebStudentSubjectsScreenState extends State<WebStudentSubjectsScreen> {
                   ),
                 ),
               ),
-            if (isMarked) SizedBox(height: 10.h),
+            if (isMarked || !isMarked) SizedBox(height: 10.h),
             if (showDivider) ...[
               SizedBox(height: 12.h),
               Divider(height: 1, color: AppTheme.dividerColor),

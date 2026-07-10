@@ -1,5 +1,5 @@
-name: msce_exam_app
-description: MSCE Exam Center — batches, visual present check, GPS 15m lock
+name: gcc_tbc_exams
+description: GCC TBC EXAMS — batches, visual present check, GPS 15m lock
 publish_to: 'none'
 version: 1.0.0+1
 

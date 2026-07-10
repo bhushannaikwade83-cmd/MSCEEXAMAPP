@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -17,6 +17,9 @@ import 'services/face_recognition_service.dart';
 import 'services/pin_service.dart';
 import 'services/post_login_navigator.dart';
 import 'services/session_service.dart';
+import 'web/screens/web_login_screen.dart';
+import 'web/screens/web_home_screen.dart';
+import 'web/screens/web_center_login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,7 +64,7 @@ class MsceExamApp extends StatelessWidget {
           },
         );
       },
-      child: const _Bootstrap(),
+      child: kIsWeb ? const _BootstrapWeb() : const _Bootstrap(),
     );
   }
 }
@@ -128,6 +131,80 @@ class _BootstrapState extends State<_Bootstrap> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const CenterLoginScreen()),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
+// ✅ WEB PLATFORM BOOTSTRAP
+class _BootstrapWeb extends StatefulWidget {
+  const _BootstrapWeb();
+
+  @override
+  State<_BootstrapWeb> createState() => _BootstrapWebState();
+}
+
+class _BootstrapWebState extends State<_BootstrapWeb> {
+  @override
+  void initState() {
+    super.initState();
+    _route();
+  }
+
+  Future<void> _route() async {
+    final center = await SessionService.getCenter();
+    final pin = await SessionService.getPin();
+    final sessionValid = await SessionService.isSessionValid();
+    if (!mounted) return;
+
+    // ✅ Web routing logic (same as Android):
+    // 1. PIN + session valid → go to WebHomeScreen
+    // 2. PIN + session expired → go to WebLoginScreen (PIN re-entry)
+    // 3. Centre but no PIN → go to PIN setup
+    // 4. No centre → go to Centre login
+
+    // ✅ PIN exists and session is still valid
+    if (pin != null && pin.isNotEmpty && sessionValid) {
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => WebHomeScreen()),
+        );
+      }
+      return;
+    }
+
+    // ✅ PIN exists but session expired → go to PIN login (re-entry)
+    if (pin != null && pin.isNotEmpty) {
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => WebLoginScreen()),
+        );
+      }
+      return;
+    }
+
+    // ✅ No PIN - if centre exists, continue setup (PIN setup)
+    if (center != null) {
+      if (mounted) {
+        await PostLoginNavigator.continueSetup(context, centerId: center['id']!);
+      }
+      return;
+    }
+
+    // ✅ No centre and no PIN - go to centre login (first time)
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const WebCenterLoginScreen()),
       );
     }
   }

@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+import 'dart:ui_web' as ui;
 import '../services/web_camera_service.dart';
 import '../../core/theme/app_ui.dart';
 
@@ -155,15 +157,19 @@ class _WebCameraDialogState extends State<WebCameraDialog> {
 
             // Video preview area
             if (_cameraReady)
-              Container(
-                width: double.infinity,
-                height: 400.h,
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(8.r),
-                  border: Border.all(color: AppTheme.primaryBlue, width: 2),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8.r),
+                child: Container(
+                  width: double.infinity,
+                  height: 400.h,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    border: Border.all(color: AppTheme.primaryBlue, width: 2),
+                  ),
+                  child: HtmlElementView(
+                    viewType: _videoId,
+                  ),
                 ),
-                child: const Placeholder(), // Video element renders here via HTML
               )
             else
               Container(
@@ -199,7 +205,7 @@ class _WebCameraDialogState extends State<WebCameraDialog> {
               padding: EdgeInsets.all(12.w),
               decoration: BoxDecoration(
                 color: _isCapturing
-                    ? AppTheme.accentYellow.withValues(alpha: 0.1)
+                    ? AppTheme.accentSaffron.withValues(alpha: 0.1)
                     : _cameraReady
                         ? AppTheme.primaryGreen.withValues(alpha: 0.1)
                         : AppTheme.accentRed.withValues(alpha: 0.1),
@@ -210,7 +216,7 @@ class _WebCameraDialogState extends State<WebCameraDialog> {
                 style: TextStyle(
                   fontSize: 12.sp,
                   color: _isCapturing
-                      ? AppTheme.accentYellow
+                      ? AppTheme.accentSaffron
                       : _cameraReady
                           ? AppTheme.primaryGreen
                           : AppTheme.accentRed,

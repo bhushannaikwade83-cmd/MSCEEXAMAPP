@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:html' as html;
+import 'dart:ui_web' as ui;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:image/image.dart' as img;
 
@@ -18,13 +19,10 @@ class WebCameraService {
       // Check browser support
       final window = html.window;
       final navigator = window.navigator;
+      final mediaDevices = navigator.mediaDevices;
 
-      // Get getUserMedia API
-      final getUserMedia = navigator.mediaDevices?.getDisplayMedia ??
-                          navigator.getUserMedia;
-
-      if (getUserMedia == null) {
-        throw Exception('getUserMedia not supported in this browser');
+      if (mediaDevices == null) {
+        throw Exception('mediaDevices not supported in this browser');
       }
 
       debugPrint('✅ Camera API supported');
@@ -64,7 +62,7 @@ class WebCameraService {
       debugPrint('📸 Photo captured from canvas (${canvasElement.width}x${canvasElement.height})');
 
       // Convert canvas to blob
-      final imageData = await canvasElement.toBlob(type: 'image/jpeg', quality: 0.9);
+      final imageData = await canvasElement.toBlob();
 
       // Convert blob to bytes
       final reader = html.FileReader();
@@ -151,15 +149,19 @@ class WebCameraService {
       final videoElement = html.VideoElement()
         ..id = videoElementId
         ..autoplay = true
-        ..style.width = '${width}px'
-        ..style.height = '${height}px'
-        ..style.border = '2px solid #1e40af'
-        ..style.borderRadius = '8px'
+        ..style.width = '100%'
+        ..style.height = '100%'
         ..style.backgroundColor = '#000'
-        ..style.objectFit = 'cover';
+        ..style.objectFit = 'cover'
+        ..style.display = 'block';
 
-      html.document.body?.append(videoElement);
-      debugPrint('✅ Video element created');
+      // Register with Flutter's view factory for HtmlElementView
+      ui.platformViewRegistry.registerViewFactory(
+        videoElementId,
+        (int viewId) => videoElement,
+      );
+
+      debugPrint('✅ Video element created and registered');
     } catch (e) {
       debugPrint('❌ Video element creation failed: $e');
     }

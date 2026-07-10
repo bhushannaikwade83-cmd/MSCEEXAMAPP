@@ -1,0 +1,124 @@
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 300px;
+  max-width: 400px;
+  padding: 14px 18px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  font-size: 0.9em;
+  font-weight: 500;
+  pointer-events: auto;
+  margin-top: 10px;
+  backdrop-filter: blur(10px);
+}
+
+.toast-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toast-message {
+  margin: 0;
+  flex: 1;
+}
+
+.toast-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.toast-close:hover {
+  transform: scale(1.1);
+}
+
+.toast-success {
+  background: linear-gradient(135deg, #2ed573 0%, #26de81 100%);
+  color: white;
+}
+
+.toast-success .toast-close {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.toast-success .toast-close:hover {
+  color: white;
+}
+
+.toast-error {
+  background: linear-gradient(135deg, #ff4757 0%, #ee3a3c 100%);
+  color: white;
+}
+
+.toast-error .toast-close {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.toast-error .toast-close:hover {
+  color: white;
+}
+
+.toast-info {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.toast-info .toast-close {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.toast-info .toast-close:hover {
+  color: white;
+}
+
+.toast-warning {
+  background: linear-gradient(135deg, #ffa502 0%, #ff7e00 100%);
+  color: white;
+}
+
+.toast-warning .toast-close {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.toast-warning .toast-close:hover {
+  color: white;
+}
+
+@media (max-width: 640px) {
+  .toast-container {
+    bottom: 10px;
+    right: 10px;
+    left: 10px;
+  }
+
+  .toast {
+    min-width: auto;
+    max-width: none;
+  }
+}

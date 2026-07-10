@@ -503,23 +503,45 @@ class MsceStudentService {
     if (!isSupabaseConfigured) return [];
     try {
       print('🔍 DEBUG: Querying exam_students for centre_code=$centerCode, centerId=$centerId');
-      var query = supabase.from('exam_students').select();
-      if (centerCode != null && centerCode.isNotEmpty) {
-        query = query.eq('centre_code', centerCode);
-        print('✅ DEBUG: Filter by centre_code=$centerCode');
-      } else {
-        query = query.eq('centre_id', centerId);
-      }
-      if (search.isNotEmpty) {
-        // ✅ Search by: student_name OR seat_no OR sr_no
-        final searchTerm = search.trim();
-        query = query.or(
-          'student_name.ilike.%$searchTerm%,seat_no.ilike.%$searchTerm%,sr_no.ilike.%$searchTerm%'
-        );
+
+      // ✅ Fetch ALL rows in chunks to bypass 1000 row limit
+      final allRows = <Map<String, dynamic>>[];
+      const chunkSize = 1000;
+      int offset = 0;
+
+      while (true) {
+        // ✅ Build query with proper chain: select → filters → range → order
+        var queryBuilder = supabase.from('exam_students').select();
+
+        if (centerCode != null && centerCode.isNotEmpty) {
+          queryBuilder = queryBuilder.eq('centre_code', centerCode);
+        } else {
+          queryBuilder = queryBuilder.eq('centre_id', centerId);
+        }
+
+        if (search.isNotEmpty) {
+          // ✅ Search by: student_name OR seat_no OR sr_no
+          final searchTerm = search.trim();
+          queryBuilder = queryBuilder.or(
+            'student_name.ilike.%$searchTerm%,seat_no.ilike.%$searchTerm%,sr_no.ilike.%$searchTerm%'
+          );
+        }
+
+        // ✅ Apply range + order in correct chain order
+        final rows = await queryBuilder
+            .range(offset, offset + chunkSize - 1)
+            .order('seat_no', ascending: true) as List;
+        if (rows.isEmpty) break;
+
+        allRows.addAll(rows.map((r) => Map<String, dynamic>.from(r as Map)));
+        print('✅ Fetched ${rows.length} students (offset=$offset, total so far=${allRows.length})');
+
+        if (rows.length < chunkSize) break;  // Last batch fetched
+        offset += chunkSize;
       }
 
-      // ✅ Order by seat_no ascending (exam hall seat order, not by name)
-      final rows = await query.order('seat_no', ascending: true);
+      print('✅ Total students fetched: ${allRows.length}');
+      final rows = allRows;
 
       // ✅ Group ALL subjects by STUDENT NAME (not exam_student_id - same student may have different IDs per subject)
       final studentMap = <String, List<Map<String, dynamic>>>{};
@@ -656,6 +678,24 @@ class MsceStudentService {
       print('❌ DEBUG ERROR: $e');
       return [];
     }
+  }
+
+  /// Convert Map<String, dynamic> back to MsceStudent object
+  MsceStudent convertMapToMsceStudent(Map<String, dynamic> map) {
+    return MsceStudent(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      lastName: '',
+      srNo: map['sr_no'] ?? '',
+      photoUrl: map['photo_url'] ?? '',
+      hasFaceEmbedding: false,
+      entryMarked: map['entry_marked'] == true,
+      entryPhotoUrl: map['entry_photo_url'],
+      entryMarkedAt: map['entry_photo_at'] != null
+          ? DateTime.tryParse(map['entry_photo_at'].toString())
+          : null,
+      subjects: map['subjects'] as List<Map<String, dynamic>>? ?? [],
+    );
   }
 
 }

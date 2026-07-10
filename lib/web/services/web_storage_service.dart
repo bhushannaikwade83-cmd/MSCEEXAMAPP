@@ -67,16 +67,18 @@ class WebStorageService {
     try {
       debugPrint('🌐 Calling Supabase Edge Function for upload...');
 
-      // Get Supabase URL and API key
-      final supabaseUrl = supabase.rest.baseUrl;
-      final anonKey = supabase.rest.headers['apikey'] ?? '';
+      // Get Supabase URL and API key from supabase_flutter
+      final client = supabase;
+      final supabaseUrl = 'https://snxcrqgodamoxwgkkqez.supabase.co';  // Supabase project URL (from app_config.env)
+      final session = client.auth.currentSession;
+      final token = session?.accessToken ?? '';
 
-      if (anonKey.isEmpty) {
-        throw Exception('Supabase API key not found');
+      if (token.isEmpty) {
+        throw Exception('Not authenticated');
       }
 
       // ✅ Call edge function endpoint
-      final functionUrl = '$supabaseUrl/functions/v1/b2-storage-proxy';
+      final functionUrl = '$supabaseUrl/b2-storage-proxy';
 
       debugPrint('🌐 Edge Function URL: $functionUrl');
 
@@ -90,7 +92,7 @@ class WebStorageService {
         Uri.parse(functionUrl),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $anonKey',
+          'Authorization': 'Bearer $token',
         },
         body: jsonEncode(requestBody),
       ).timeout(

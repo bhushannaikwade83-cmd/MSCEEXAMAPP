@@ -490,12 +490,14 @@ class _HomeScreenState extends State<HomeScreen> {
   // ✅ NEW: Advanced filters (Batch + Subject) on SAME line - AUTO RESPONSIVE
   Widget _buildAdvancedFilters() {
     final isMobile = MediaQuery.of(context).size.width < 600;
-    final horizontalPad = isMobile ? 10.w : 12.w;
-    final verticalPad = isMobile ? 6.h : 8.h;
-    final innerHPad = isMobile ? 8.w : 10.w;
-    final innerVPad = isMobile ? 5.h : 6.h;
-    final gap = isMobile ? 6.w : 8.w;
-    final borderRad = isMobile ? 5.r : 6.r;
+    final horizontalPad = isMobile ? 8.w : 10.w;
+    final verticalPad = isMobile ? 4.h : 6.h;
+    final innerHPad = isMobile ? 6.w : 8.w;
+    final innerVPad = isMobile ? 4.h : 5.h;
+    final gap = isMobile ? 4.w : 6.w;
+    final borderRad = isMobile ? 4.r : 5.r;
+    final fontSize = isMobile ? 8.5.sp : 9.sp;
+    final iconSize = isMobile ? 14.0 : 15.0;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(horizontalPad, verticalPad, horizontalPad, verticalPad),
@@ -506,7 +508,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: DropdownButtonFormField<String>(
                 value: _selectedBatch,
-                hint: Text('All Batches', style: TextStyle(fontSize: isMobile ? 9.sp : 10.sp)),
+                hint: Text('Batches', style: TextStyle(fontSize: fontSize)),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('All Batches')),
                   ..._allBatches.map((b) => DropdownMenuItem(value: b, child: Text(b))),
@@ -523,13 +525,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   isDense: true,
                   suffixIcon: _selectedBatch != null
                       ? IconButton(
-                          icon: Icon(Icons.clear, size: isMobile ? 15 : 16),
+                          icon: Icon(Icons.clear, size: iconSize),
                           onPressed: () => setState(() {
                             _selectedBatch = null;
                             _currentPage = 1;
                           }),
                           padding: EdgeInsets.zero,
-                          constraints: BoxConstraints(minWidth: isMobile ? 26.w : 28.w),
+                          constraints: BoxConstraints(minWidth: isMobile ? 24.w : 26.w),
                         )
                       : null,
                 ),
@@ -541,7 +543,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: DropdownButtonFormField<String>(
                 value: _selectedSubject,
-                hint: Text('All Subjects', style: TextStyle(fontSize: isMobile ? 9.sp : 10.sp)),
+                hint: Text('Subjects', style: TextStyle(fontSize: fontSize)),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('All Subjects')),
                   ..._allSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s))),
@@ -558,13 +560,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   isDense: true,
                   suffixIcon: _selectedSubject != null
                       ? IconButton(
-                          icon: Icon(Icons.clear, size: isMobile ? 15 : 16),
+                          icon: Icon(Icons.clear, size: iconSize),
                           onPressed: () => setState(() {
                             _selectedSubject = null;
                             _currentPage = 1;
                           }),
                           padding: EdgeInsets.zero,
-                          constraints: BoxConstraints(minWidth: isMobile ? 26.w : 28.w),
+                          constraints: BoxConstraints(minWidth: isMobile ? 24.w : 26.w),
                         )
                       : null,
                 ),

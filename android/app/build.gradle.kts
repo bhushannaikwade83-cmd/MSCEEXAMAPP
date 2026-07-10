@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "in.msce.msce_exam_app"
+    namespace = "com.gcctbc.exams"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -23,7 +23,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "in.msce.msce_exam_app"
+        applicationId = "com.gcctbc.exams"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
