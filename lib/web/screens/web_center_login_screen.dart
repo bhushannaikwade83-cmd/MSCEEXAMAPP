@@ -144,7 +144,7 @@ class _WebCenterLoginScreenState extends State<WebCenterLoginScreen> {
                         ),
                         SizedBox(height: 14.h),
                         Text(
-                          'MSCE Exam App',
+                          'GCC TBC EXAMS',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: AppTheme.primaryBlue,

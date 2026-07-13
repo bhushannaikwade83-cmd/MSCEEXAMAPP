@@ -1,0 +1,153 @@
+{
+  "object" : {
+    "artifacts" : [
+
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "app_links-7.2.0",
+          "kind" : "fileSystem",
+          "location" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/app_links-7.2.0",
+          "name" : "app_links"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/app_links-7.2.0"
+        },
+        "subpath" : "app_links-7.2.0"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "camera_avfoundation-0.10.1",
+          "kind" : "fileSystem",
+          "location" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/camera_avfoundation-0.10.1",
+          "name" : "camera_avfoundation"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/camera_avfoundation-0.10.1"
+        },
+        "subpath" : "camera_avfoundation-0.10.1"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "flutterframework",
+          "kind" : "fileSystem",
+          "location" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/FlutterFramework",
+          "name" : "FlutterFramework"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/FlutterFramework"
+        },
+        "subpath" : "flutterframework"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "geolocator_apple-2.3.14",
+          "kind" : "fileSystem",
+          "location" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/geolocator_apple-2.3.14",
+          "name" : "geolocator_apple"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/geolocator_apple-2.3.14"
+        },
+        "subpath" : "geolocator_apple-2.3.14"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "mobile_scanner-7.2.0",
+          "kind" : "fileSystem",
+          "location" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/mobile_scanner-7.2.0",
+          "name" : "mobile_scanner"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/mobile_scanner-7.2.0"
+        },
+        "subpath" : "mobile_scanner-7.2.0"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "package_info_plus-10.2.0",
+          "kind" : "fileSystem",
+          "location" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/package_info_plus-10.2.0",
+          "name" : "package_info_plus"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/package_info_plus-10.2.0"
+        },
+        "subpath" : "package_info_plus-10.2.0"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "permission_handler_apple-9.4.10",
+          "kind" : "fileSystem",
+          "location" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/permission_handler_apple-9.4.10",
+          "name" : "permission_handler_apple"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/permission_handler_apple-9.4.10"
+        },
+        "subpath" : "permission_handler_apple-9.4.10"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "shared_preferences_foundation-2.5.6",
+          "kind" : "fileSystem",
+          "location" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/shared_preferences_foundation-2.5.6",
+          "name" : "shared_preferences_foundation"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/shared_preferences_foundation-2.5.6"
+        },
+        "subpath" : "shared_preferences_foundation-2.5.6"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "sqflite_darwin-2.4.3+1",
+          "kind" : "fileSystem",
+          "location" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/sqflite_darwin-2.4.3+1",
+          "name" : "sqflite_darwin"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/sqflite_darwin-2.4.3+1"
+        },
+        "subpath" : "sqflite_darwin-2.4.3+1"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "url_launcher_ios-6.4.1",
+          "kind" : "fileSystem",
+          "location" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/url_launcher_ios-6.4.1",
+          "name" : "url_launcher_ios"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/bhushan/Desktop/PROJECTS/MSCEEXAMAPP/ios/Flutter/ephemeral/Packages/.packages/url_launcher_ios-6.4.1"
+        },
+        "subpath" : "url_launcher_ios-6.4.1"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/supabase_client.dart';
 import '../services/post_login_navigator.dart';
 import '../services/session_service.dart';
 import 'screens/web_center_login_screen.dart';
@@ -26,6 +28,17 @@ class _WebBootstrapState extends State<WebBootstrap> {
   }
 
   Future<void> _route() async {
+    try {
+      // Ensure Supabase anonymous session exists for web uploads
+      final client = supabase;
+      final currentSession = client.auth.currentSession;
+      if (currentSession == null) {
+        await client.auth.signInAnonymously();
+      }
+    } catch (e) {
+      debugPrint('⚠️ Supabase anonymous sign-in failed: $e');
+    }
+
     final center = await SessionService.getCenter();
     final pin = await SessionService.getPin();
     final sessionValid = await SessionService.isSessionValid();
