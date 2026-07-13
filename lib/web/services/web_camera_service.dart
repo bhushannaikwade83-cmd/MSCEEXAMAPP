@@ -1,14 +1,29 @@
+import 'dart:convert' show base64Decode;
 import 'dart:typed_data';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:image/image.dart' as img;
 
-/// Web-specific camera service using HTML5 Canvas & getUserMedia API
-/// Captures photos via webcam for entry marking
+/// Web-specific camera service using HTML5 video/canvas & getUserMedia API.
+/// Captures photos via webcam for entry marking.
+///
+/// IMPORTANT implementation notes:
+/// - Elements are kept as direct Dart references (in [_videos]/[_canvases]).
+///   `document.getElementById` CANNOT be used: HtmlElementView inserts the
+///   video inside Flutter's shadow DOM where getElementById never finds it.
+/// - A platform view type may only be registered once per app session, so
+///   registration is guarded; the factory returns the CURRENT element.
 class WebCameraService {
   static const String _videoElementId = 'webcam-video';
   static const String _canvasElementId = 'webcam-canvas';
+
+  /// Live element references, keyed by element id.
+  static final Map<String, html.VideoElement> _videos = {};
+  static final Map<String, html.CanvasElement> _canvases = {};
+
+  /// View types already registered with the platform view registry.
+  static final Set<String> _registeredViewTypes = {};
 
   /// Request permission and open camera
   /// Returns true if permission granted and camera started
@@ -16,11 +31,7 @@ class WebCameraService {
     try {
       debugPrint('📷 Requesting camera permission...');
 
-      // Check browser support
-      final window = html.window;
-      final navigator = window.navigator;
-      final mediaDevices = navigator.mediaDevices;
-
+      final mediaDevices = html.window.navigator.mediaDevices;
       if (mediaDevices == null) {
         throw Exception('mediaDevices not supported in this browser');
       }
@@ -33,45 +44,40 @@ class WebCameraService {
     }
   }
 
-  /// Capture photo from webcam
-  /// Returns compressed JPEG photo bytes
-  static Future<Uint8List> capturePhotoFromWebcam() async {
+  /// Capture photo from webcam.
+  /// Returns JPEG photo bytes.
+  static Future<Uint8List> capturePhotoFromWebcam({
+    String videoElementId = _videoElementId,
+    String canvasElementId = _canvasElementId,
+  }) async {
     try {
       debugPrint('📸 Capturing photo from webcam...');
 
-      // Access video element
-      final videoElement = html.document.getElementById(_videoElementId) as html.VideoElement?;
+      final videoElement = _videos[videoElementId];
       if (videoElement == null) {
         throw Exception('Video element not found');
       }
 
-      // Access canvas element
-      final canvasElement = html.document.getElementById(_canvasElementId) as html.CanvasElement?;
+      final canvasElement = _canvases[canvasElementId];
       if (canvasElement == null) {
         throw Exception('Canvas element not found');
       }
 
-      // Get canvas context
-      final context = canvasElement.context2D;
+      // Wait for the stream to actually deliver frames.
+      await _waitForVideoReady(videoElement);
 
-      // Draw video frame to canvas
+      // Draw current video frame to canvas
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
-      context.drawImage(videoElement, 0, 0);
+      canvasElement.context2D.drawImage(videoElement, 0, 0);
 
-      debugPrint('📸 Photo captured from canvas (${canvasElement.width}x${canvasElement.height})');
+      debugPrint(
+          '📸 Photo captured from canvas (${canvasElement.width}x${canvasElement.height})');
 
-      // Convert canvas to blob
-      final imageData = await canvasElement.toBlob();
-
-      // Convert blob to bytes
-      final reader = html.FileReader();
-      reader.readAsArrayBuffer(imageData);
-
-      await reader.onLoad.first;
-
-      final bytes = reader.result as List<int>;
-      final photoBytes = Uint8List.fromList(bytes);
+      // Encode via data URL (synchronous & reliable across browsers)
+      final dataUrl = canvasElement.toDataUrl('image/jpeg', 0.92);
+      final base64Data = dataUrl.substring(dataUrl.indexOf(',') + 1);
+      final photoBytes = base64Decode(base64Data);
 
       debugPrint('✅ Photo captured: ${photoBytes.length} bytes');
       return photoBytes;
@@ -79,6 +85,16 @@ class WebCameraService {
       debugPrint('❌ Capture failed: $e');
       rethrow;
     }
+  }
+
+  /// Waits until the video has real dimensions (frames flowing).
+  static Future<void> _waitForVideoReady(html.VideoElement video) async {
+    if (video.videoWidth > 0 && video.videoHeight > 0) return;
+    for (int i = 0; i < 50; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (video.videoWidth > 0 && video.videoHeight > 0) return;
+    }
+    throw Exception('Camera stream did not start (no video frames)');
   }
 
   /// Compress photo to under 1MB for web upload
@@ -103,7 +119,8 @@ class WebCameraService {
 
       // Start with quality 90
       int quality = 90;
-      Uint8List compressed = Uint8List.fromList(img.encodeJpg(image, quality: quality));
+      Uint8List compressed =
+          Uint8List.fromList(img.encodeJpg(image, quality: quality));
 
       debugPrint('🗜️ Initial size: ${compressed.length} bytes (quality: $quality)');
 
@@ -142,24 +159,36 @@ class WebCameraService {
     try {
       debugPrint('📺 Creating video element...');
 
-      // Remove existing if any
-      html.document.getElementById(videoElementId)?.remove();
+      // Stop any previous stream on this id before replacing the element.
+      _stopTracks(_videos[videoElementId]);
 
-      // Create video element
+      // Create video element.
+      // muted + playsinline are REQUIRED for autoplay on iOS Safari.
       final videoElement = html.VideoElement()
         ..id = videoElementId
         ..autoplay = true
+        ..muted = true
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.backgroundColor = '#000'
         ..style.objectFit = 'cover'
         ..style.display = 'block';
+      videoElement.setAttribute('muted', '');
+      videoElement.setAttribute('autoplay', '');
+      videoElement.setAttribute('playsinline', 'true');
 
-      // Register with Flutter's view factory for HtmlElementView
-      ui.platformViewRegistry.registerViewFactory(
-        videoElementId,
-        (int viewId) => videoElement,
-      );
+      _videos[videoElementId] = videoElement;
+
+      // Register with Flutter's view factory for HtmlElementView.
+      // A view type can only be registered ONCE per app session; the factory
+      // returns whatever the CURRENT element for this id is.
+      if (!_registeredViewTypes.contains(videoElementId)) {
+        ui.platformViewRegistry.registerViewFactory(
+          videoElementId,
+          (int viewId) => _videos[videoElementId] ?? html.VideoElement(),
+        );
+        _registeredViewTypes.add(videoElementId);
+      }
 
       debugPrint('✅ Video element created and registered');
     } catch (e) {
@@ -173,16 +202,8 @@ class WebCameraService {
   }) {
     try {
       debugPrint('🎨 Creating canvas element...');
-
-      // Remove existing if any
-      html.document.getElementById(canvasElementId)?.remove();
-
-      // Create canvas element (hidden)
-      final canvasElement = html.CanvasElement()
-        ..id = canvasElementId
-        ..style.display = 'none';
-
-      html.document.body?.append(canvasElement);
+      // Canvas does not need to be attached to the DOM to draw/encode.
+      _canvases[canvasElementId] = html.CanvasElement();
       debugPrint('✅ Canvas element created');
     } catch (e) {
       debugPrint('❌ Canvas element creation failed: $e');
@@ -197,15 +218,13 @@ class WebCameraService {
     try {
       debugPrint('▶️ Starting webcam stream...');
 
-      final videoElement = html.document.getElementById(videoElementId) as html.VideoElement?;
+      final videoElement = _videos[videoElementId];
       if (videoElement == null) {
-        throw Exception('Video element not found');
+        throw Exception(
+            'Video element not found — call createVideoElement first');
       }
 
-      // Get getUserMedia
-      final navigator = html.window.navigator;
-      final mediaDevices = navigator.mediaDevices;
-
+      final mediaDevices = html.window.navigator.mediaDevices;
       if (mediaDevices == null) {
         throw Exception('mediaDevices not supported');
       }
@@ -217,10 +236,16 @@ class WebCameraService {
           'width': {'ideal': 1280},
           'height': {'ideal': 720},
         },
-      }) as html.MediaStream;
+      });
 
-      // Set video source to stream
+      // Set video source to stream and start playback
       videoElement.srcObject = stream;
+      try {
+        await videoElement.play();
+      } catch (_) {
+        // Autoplay policies may reject play(); the muted+autoplay attributes
+        // let the browser start playback once the element is displayed.
+      }
 
       debugPrint('✅ Webcam stream started');
     } catch (e) {
@@ -235,22 +260,22 @@ class WebCameraService {
   }) async {
     try {
       debugPrint('⏹️ Stopping webcam stream...');
-
-      final videoElement = html.document.getElementById(videoElementId) as html.VideoElement?;
-      if (videoElement == null) return;
-
-      // Stop all tracks
-      final stream = videoElement.srcObject as html.MediaStream?;
-      if (stream != null) {
-        for (final track in stream.getTracks()) {
-          track.stop();
-        }
-      }
-
+      _stopTracks(_videos[videoElementId]);
       debugPrint('✅ Webcam stream stopped');
     } catch (e) {
       debugPrint('❌ Stream stop failed: $e');
     }
+  }
+
+  static void _stopTracks(html.VideoElement? videoElement) {
+    if (videoElement == null) return;
+    final stream = videoElement.srcObject;
+    if (stream is html.MediaStream) {
+      for (final track in stream.getTracks()) {
+        track.stop();
+      }
+    }
+    videoElement.srcObject = null;
   }
 
   /// Clean up resources
@@ -260,13 +285,9 @@ class WebCameraService {
   }) {
     try {
       debugPrint('🧹 Cleaning up camera resources...');
-
-      // Remove video element
-      html.document.getElementById(videoElementId)?.remove();
-
-      // Remove canvas element
-      html.document.getElementById(canvasElementId)?.remove();
-
+      _stopTracks(_videos[videoElementId]);
+      _videos.remove(videoElementId)?.remove();
+      _canvases.remove(canvasElementId);
       debugPrint('✅ Cleanup complete');
     } catch (e) {
       debugPrint('❌ Cleanup error: $e');

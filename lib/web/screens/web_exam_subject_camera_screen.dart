@@ -61,7 +61,7 @@ class _WebExamSubjectCameraScreenState
 
       await WebCameraService.startWebcamStream(
         videoElementId: 'exam-webcam-video',
-        facingMode: true, // Front camera
+        facingMode: false, // Rear (environment) camera
       );
 
       if (mounted) {
@@ -84,8 +84,10 @@ class _WebExamSubjectCameraScreenState
       debugPrint('📸 Capturing photo...');
 
       // Capture from webcam
-      Uint8List photoBytes =
-          await WebCameraService.capturePhotoFromWebcam();
+      Uint8List photoBytes = await WebCameraService.capturePhotoFromWebcam(
+        videoElementId: 'exam-webcam-video',
+        canvasElementId: 'exam-webcam-canvas',
+      );
 
       // Compress photo to under 1MB
       photoBytes =

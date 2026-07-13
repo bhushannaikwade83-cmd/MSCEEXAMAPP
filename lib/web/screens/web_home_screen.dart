@@ -10,7 +10,7 @@ import '../../services/msce_student_service.dart';
 import '../../services/session_service.dart';
 import 'web_center_login_screen.dart';
 import 'web_student_subjects_screen.dart';
-import 'web_qr_search_screen.dart';
+import 'web_qr_camera_scanner_screen.dart';
 import 'web_camera_dialog.dart';
 import '../services/web_storage_service.dart';
 
@@ -833,12 +833,12 @@ class _WebHomeScreenState extends State<WebHomeScreen> {
     );
   }
 
-  // Show QR scanner (web version - manual input)
+  // Show QR scanner (camera scan → student details → mark entry)
   void _showQrScannerDialog() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => WebQrSearchScreen(),
+        builder: (_) => const WebQrCameraScannerScreen(),
       ),
     ).then((_) {
       _load();

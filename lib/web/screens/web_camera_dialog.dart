@@ -64,7 +64,7 @@ class _WebCameraDialogState extends State<WebCameraDialog> {
       // Start stream
       await WebCameraService.startWebcamStream(
         videoElementId: _videoId,
-        facingMode: true, // User-facing camera
+        facingMode: false, // Rear (environment) camera
       );
 
       if (!mounted) return;
