@@ -74,11 +74,11 @@ class WebStorageService {
       final token = session?.accessToken ?? '';
 
       if (token.isEmpty) {
-        throw Exception('Not authenticated');
+        throw Exception('Not authenticated - no Supabase session');
       }
 
-      // ✅ Call edge function endpoint
-      final functionUrl = '$supabaseUrl/b2-storage-proxy';
+      // ✅ Call edge function endpoint using correct functions URL
+      final functionUrl = '$supabaseUrl/functions/v1/b2-storage-proxy';
 
       debugPrint('🌐 Edge Function URL: $functionUrl');
 

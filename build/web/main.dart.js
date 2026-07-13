@@ -29572,8 +29572,8 @@ l=n.glb().d.a
 e=l
 d=e==null?null:e.c
 k=d==null?"":d
-if(J.ad(k)===0){e=A.bh("Not authenticated")
-throw A.c(e)}j=A.i(m)+"/b2-storage-proxy"
+if(J.ad(k)===0){e=A.bh("Not authenticated - no Supabase session")
+throw A.c(e)}j=A.i(m)+"/functions/v1/b2-storage-proxy"
 A.bt().$1("\ud83c\udf10 Edge Function URL: "+A.i(j))
 e=t.N
 i=A.ab(["action","upload_file","storagePath",a2,"photoData",B.qe.gPC().dE(a1)],e,e)
